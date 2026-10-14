@@ -1,0 +1,206 @@
+# static-gateway (agent-serve's code, DESIGN §6.4, D5). Replaces deploy/platform/static-gateway.yaml.
+# Serves serving/<id>/ from a read-only blobfuse2 mount.
+#
+# Blob CSI static provisioning, verified against learn.microsoft.com/azure/aks/create-volume-azure-blob-storage
+# (2026-08-05): protocol fuse2, AzureStorageAuthType MSI with AzureStorageIdentityClientID, mount options
+# passed through to blobfuse2. Read-only three times over: "-o ro" to blobfuse2, csi.readOnly on the PV, and
+# readOnly on the volumeMount. Short kernel attribute/entry timeouts (5 s) bound how long a republished
+# artifact serves stale content (DESIGN §9 "Blob CSI attribute cache").
+# identities.blobfuse is the identity whose object id is storage.bicep's staticGatewayPrincipalId (Blob Data
+# Reader on the serving container). blobfuse runs on the node, so this is the kubelet identity or a
+# user-assigned identity attached to the node pool's VMSS, not the pod's workload identity (identities.staticGateway).
+#
+# Everything for namespace artifacts-static is in this one file: ServiceAccount, SecretProviderClass,
+# PV/PVC, Deployment, Service — mirrors the raw file's layout.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: static-gateway
+  namespace: artifacts-static
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.identities.staticGateway.clientId | quote }}
+automountServiceAccountToken: false
+---
+# static-gateway verifies the ?t= view token with the same HMAC key intake-api mints with (DESIGN §6.4).
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: static-gateway-secrets
+  namespace: artifacts-static
+spec:
+  provider: azure
+  secretObjects:
+    - secretName: static-gateway-secrets
+      type: Opaque
+      data:
+        - objectName: view-token-key
+          key: VIEW_TOKEN_KEY
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    clientID: {{ .Values.identities.staticGateway.clientId | quote }}
+    keyvaultName: {{ .Values.keyVaultName | quote }}
+    tenantId: {{ .Values.tenantId | quote }}
+    objects: |
+      array:
+        - |
+          objectName: view-token-key
+          objectType: secret
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: artifacts-serving
+  annotations:
+    pv.kubernetes.io/provisioned-by: blob.csi.azure.com
+spec:
+  capacity:
+    storage: {{ .Values.staticGatewayBlob.pvCapacity | quote }}   # not enforced by the driver; only matched against the PVC
+  accessModes:
+    - ReadOnlyMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""        # static binding only
+  mountOptions:
+    - -o ro
+    - -o allow_other          # blobfuse runs as root on the node; the container is uid 65532
+    - --use-attr-cache=true
+    - --file-cache-timeout-in-seconds=5
+    - -o attr_timeout=5
+    - -o entry_timeout=5
+    - -o negative_timeout=5
+    - --cancel-list-on-mount-seconds=10
+    - --log-level=LOG_WARNING
+    - --cache-size-mb=512
+  csi:
+    driver: blob.csi.azure.com
+    readOnly: true
+    volumeHandle: "{{ .Values.storage.accountName }}_serving"   # must be unique in the cluster; '#' and '/' are reserved
+    volumeAttributes:
+      protocol: fuse2
+      resourceGroup: {{ .Values.storage.resourceGroup | quote }}
+      storageAccount: {{ .Values.storage.accountName | quote }}
+      containerName: {{ .Values.storage.containers.serving | quote }}
+      AzureStorageAuthType: MSI
+      AzureStorageIdentityClientID: {{ .Values.identities.blobfuse.clientId | quote }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: artifacts-serving
+  namespace: artifacts-static
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: ""
+  volumeName: artifacts-serving
+  resources:
+    requests:
+      storage: {{ .Values.staticGatewayBlob.pvCapacity | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: static-gateway
+  namespace: artifacts-static
+  labels:
+    app.kubernetes.io/name: static-gateway
+spec:
+  replicas: {{ .Values.replicaCount.staticGateway }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: static-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: static-gateway
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: static-gateway
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: serving
+          image: {{ .Values.images.staticGateway | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: SERVE_ROOT          # <root>/<artifactId>/ per host (local dir on a laptop, the mount here)
+              value: /srv
+            - name: ARTIFACT_DOMAIN
+              value: {{ .Values.domains.artifacts | quote }}
+            - name: SHELL_ORIGIN
+              value: "https://{{ .Values.domains.shell }}"
+          envFrom:
+            - secretRef:
+                name: static-gateway-secrets   # VIEW_TOKEN_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          volumeMounts:
+            - name: serving
+              mountPath: /srv
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: serving
+          persistentVolumeClaim:
+            claimName: artifacts-serving
+            readOnly: true
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: static-gateway-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: static-gateway
+  namespace: artifacts-static
+  labels:
+    app.kubernetes.io/name: static-gateway
+spec:
+  selector:
+    app.kubernetes.io/name: static-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

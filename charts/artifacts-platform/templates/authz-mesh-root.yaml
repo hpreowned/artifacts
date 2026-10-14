@@ -1,0 +1,53 @@
+# Mesh-root AuthorizationPolicy, DESIGN §6.8 / D11: only mesh principals may reach mesh workloads, so a
+# non-mesh pod (every artifact pod) cannot call intake-api, the scanner, or the shell even if a NetworkPolicy
+# is misconfigured. ztunnel enforces it on the receiving side; plaintext from a non-mesh pod has no
+# principal. Replaces deploy/authz-mesh-root.yaml, same staged shape.
+#
+# RESEARCH RESULT (2026-10-14), why there is no `action: AUDIT` duplicate here:
+#   ztunnel enforces only ALLOW and DENY at L4. Policies with action AUDIT or CUSTOM "must use targetRefs" to a
+#   waypoint and are not enforced by ztunnel (istio.io/latest/docs/ambient/migrate/migrate-policies/). The
+#   istio.io/dry-run annotation is likewise unsupported on ztunnel (istio/istio discussion #57631, maintainers:
+#   "I don't believe this is currently supported"; info-level policy logs land in istio/ztunnel#1745, unreleased
+#   as of April 2026). An AUDIT copy of this policy would therefore be silently inert, which is worse than none.
+#
+# Instead: a staged rollout (deploy/README.md "Mesh root policy, audit-first without AUDIT"):
+#   stage 0  inventory: who talks plaintext to mesh workloads today (ztunnel logs / metrics, deploy/README.md)
+#   stage 1  the canary below, always rendered, applies to artifacts-static only; its one workload's only
+#            legitimate client is the Gateway, a mesh principal. Watch ztunnel for "policy rejection" for a
+#            few days.
+#   stage 2  set authzMeshRoot.enableRootPolicy: true and re-apply; keep watching. Rollback: set it back to
+#            false and re-apply, or `kubectl delete authorizationpolicy -n istio-system
+#            mesh-allow-only-mesh-principals`.
+#
+# Stage 1 canary. Namespace-scoped, no selector: applies to every workload in artifacts-static. Always
+# rendered, regardless of authzMeshRoot.enableRootPolicy.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-only-mesh-principals-canary
+  namespace: artifacts-static
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/*"
+{{- if .Values.authzMeshRoot.enableRootPolicy }}
+---
+# Stage 2, mesh root. Rendered only when authzMeshRoot.enableRootPolicy is true — apply this only after the
+# canary above has run clean. The namespace must be the Istio root namespace (istio-system unless
+# meshConfig.rootNamespace says otherwise).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: mesh-allow-only-mesh-principals
+  namespace: istio-system
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/*"
+{{- end }}

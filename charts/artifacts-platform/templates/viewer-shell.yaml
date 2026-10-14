@@ -1,0 +1,111 @@
+# viewer-shell (DESIGN §3, D8). Replaces deploy/platform/viewer-shell.yaml. MSAL sign-in, audit log line per
+# view, mints a view token through intake-api's internal /v1/view-token, renders the iframe page. Entra
+# values come from infra/entra/verify.sh; the client secret and the shell session signing key are Key Vault
+# secrets via the CSI driver (viewer-shell-secrets). There is no AUTH_MODE or REDIRECT_URI in the real app
+# — DEV_AUTH unset is how Entra mode is selected (never set it here), and the redirect URI is built
+# internally as ${SHELL_ORIGIN}/auth/callback.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: viewer-shell
+  namespace: artifacts-system
+  labels:
+    app.kubernetes.io/name: viewer-shell
+spec:
+  replicas: {{ .Values.replicaCount.viewerShell }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: viewer-shell
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: viewer-shell
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: viewer-shell
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: viewer-shell
+          image: {{ .Values.images.viewerShell | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            # DEV_AUTH is deliberately absent: that is what selects real Entra sign-in (never set it here).
+            - name: ENTRA_TENANT_ID
+              value: {{ .Values.tenantId | quote }}
+            - name: ENTRA_CLIENT_ID
+              value: {{ .Values.entra.viewerShellClientId | quote }}
+            - name: SHELL_ORIGIN         # also builds the Entra redirect URI ${SHELL_ORIGIN}/auth/callback
+              value: "https://{{ .Values.domains.shell }}"
+            - name: ARTIFACT_DOMAIN
+              value: {{ .Values.domains.artifacts | quote }}
+            - name: INTAKE_INTERNAL_URL
+              value: http://intake-api.artifacts-system.svc:8080
+          envFrom:
+            - secretRef:
+                name: viewer-shell-secrets   # ENTRA_CLIENT_SECRET, SHELL_SESSION_KEY, INTERNAL_SHARED_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: viewer-shell-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: viewer-shell
+  namespace: artifacts-system
+  labels:
+    app.kubernetes.io/name: viewer-shell
+spec:
+  selector:
+    app.kubernetes.io/name: viewer-shell
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

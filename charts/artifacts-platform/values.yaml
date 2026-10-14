@@ -1,0 +1,111 @@
+# Default values for artifacts-platform. Every value below is a placeholder (the same shape the raw
+# deploy/ manifests used, just named). See values.example.yaml for a filled-in shape with fake values, and
+# deploy/README.md for what a real deployment needs. No secrets here, ever: secret material (VIEW_TOKEN_KEY,
+# PIPELINE_TOKEN, INTERNAL_SHARED_KEY, ENTRA_CLIENT_SECRET, SHELL_SESSION_KEY, the TLS keys) stays in Key
+# Vault and reaches pods only through the SecretProviderClasses below (CLAUDE.md: no secrets anywhere).
+
+# Tenant-wide identifiers shared by several resources.
+tenantId: "<tenant-id>"
+keyVaultName: "<keyvault-name>"
+
+# Hostnames (DESIGN §6.8). domains.artifacts is the bare domain; the Gateway's "content" listener and the
+# static-content HTTPRoute use the wildcard "*.<domains.artifacts>" automatically.
+domains:
+  shell: artifacts.corp.com
+  artifacts: corp-artifacts.net
+  intakeInternal: intake.artifacts.internal
+  publicBase: https://mcp.corp.com/artifacts
+
+# Entra ID (DESIGN §6.10, T18). intake-api verifies the caller's bearer itself; viewer-shell signs the
+# employee in with MSAL.
+entra:
+  audience: "<artifacts-mcp-client-id>"          # ENTRA_AUDIENCE on intake-api: the artifacts-mcp app's client id (GUID), not its Application ID URI
+  viewerShellClientId: "<artifacts-viewer-shell-app-id>"  # ENTRA_CLIENT_ID on viewer-shell
+
+# Container images. Each is the full "<repo>/<name>:<tag>" the pipeline builds and pushes
+# (jfrog.corp.com/artifacts/<name>:$(Build.BuildId) in pipelines/platform-deploy.yml).
+images:
+  intakeApi: "jfrog.corp.com/artifacts/intake-api:<tag>"
+  scannerWorker: "jfrog.corp.com/artifacts/scanner:<tag>"
+  staticGateway: "jfrog.corp.com/artifacts/static-gateway:<tag>"
+  viewerShell: "jfrog.corp.com/artifacts/viewer-shell:<tag>"
+  tlsSyncPause: "jfrog.corp.com/docker/pause:3.10"
+
+# Azure Workload Identity client ids (DESIGN §6.11). Each is a user-assigned managed identity federated to
+# "system:serviceaccount:<namespace>:<name>" on the cluster's OIDC issuer (infra/bicep/main.bicep's
+# *PrincipalId parameters). identities.blobfuse is different from identities.staticGateway: blobfuse runs on
+# the node (kubelet/VMSS identity), not through the pod's workload identity.
+identities:
+  intakeApi:
+    clientId: "<intake-api-identity-client-id>"
+  scannerWorker:
+    clientId: "<scanner-worker-identity-client-id>"
+  viewerShell:
+    clientId: "<viewer-shell-identity-client-id>"
+  tlsSync:
+    clientId: "<tls-sync-identity-client-id>"
+  staticGateway:
+    clientId: "<static-gateway-identity-client-id>"
+  blobfuse:
+    clientId: "<blobfuse-identity-client-id>"
+
+# Storage (Blob). storage.accountName feeds both intake-api/scanner-worker's STORAGE_ACCOUNT_URL and the
+# static-gateway Blob CSI PV.
+storage:
+  accountName: "<storage-account>"
+  resourceGroup: "<storage-resource-group>"
+  containers:
+    intake: intake
+    jobs: jobs
+    serving: serving
+
+serviceBus:
+  fqdn: "<servicebus-namespace>.servicebus.windows.net"
+  scanQueue: artifact-scan      # must be the same value for intake-api (enqueuer) and scanner-worker (consumer)
+
+# Azure DevOps: scanner-worker triggers the one Python-tier deploy pipeline (DESIGN §6.12).
+ado:
+  org: "<ado-org>"
+  project: "<ado-project>"
+  pipelineId: "<artifact-python-deploy-pipeline-id>"
+
+scanner:
+  gitleaksBin: /usr/local/bin/gitleaks
+  defenderTimeoutSeconds: 60
+  pipelineTimeoutHours: 24
+  healthPort: 8081
+  runtimeManifestPath: /etc/artifacts/runtime-manifest.python-1.json
+
+# Blob CSI static provisioning for static-gateway's read-only serving mount (DESIGN §6.4).
+staticGatewayBlob:
+  pvCapacity: 100Gi
+
+# ResourceQuota for artifacts-dynamic (DESIGN §6.7): 50 pods at the §6.6 limits (500m/512Mi) is exactly
+# 25 CPU / 25Gi.
+resourceQuota:
+  pods: "50"
+  requestsCpu: "25"
+  requestsMemory: 25Gi
+  limitsCpu: "25"
+  limitsMemory: 25Gi
+  configmaps: "60"
+  services: "60"
+
+replicaCount:
+  intakeApi: 2
+  scannerWorker: 2
+  staticGateway: 2
+  viewerShell: 2
+  tlsSync: 1
+
+# Optional internal-LB subnet annotation for the Gateway (deploy/gateway.yaml's commented-out line). Leave
+# empty to omit the annotation entirely.
+gateway:
+  internalLbSubnet: ""
+
+# Mesh-root AuthorizationPolicy staged rollout (DESIGN §6.8, deploy/README.md "Mesh root policy,
+# audit-first without AUDIT"). The canary (artifacts-static only) always renders. Flip this to true only
+# after the canary has run clean for a few days with no "policy rejection" in the ztunnel logs — it then
+# renders the istio-system root policy that locks every mesh workload to mesh-only callers.
+authzMeshRoot:
+  enableRootPolicy: false

@@ -1,0 +1,65 @@
+# Internal Istio Gateway (DESIGN §6.8). Replaces deploy/gateway.yaml. Istio creates the Envoy Deployment and
+# an internal Azure LB Service in artifacts-system; its pods carry label
+# gateway.networking.k8s.io/gateway-name=artifacts-internal, which networkpolicy-dynamic.yaml selects. TLS
+# Secrets come from Key Vault via secretproviderclass.yaml (gateway-tls).
+#
+# Listeners
+#   shell    {{ .Values.domains.shell }}             viewer-shell (HTTPRoute in httproutes.yaml)
+#   content  *.{{ .Values.domains.artifacts }}       static-gateway (httproutes.yaml) and every python
+#                                                     artifact (<id>.{{ .Values.domains.artifacts }}, rendered
+#                                                     by charts/artifact-python; Gateway API gives the exact
+#                                                     hostname precedence over the wildcard)
+#   intake   {{ .Values.domains.intakeInternal }}    APIM's backend hop over the VNet (DESIGN §6.11). Plain
+#                                                     HTTP on 8080 inside the VNet only; TLS on this hop is
+#                                                     optional in v1 (see deploy/README.md for how to add it).
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: artifacts-internal
+  namespace: artifacts-system
+spec:
+  gatewayClassName: istio
+  infrastructure:
+    annotations:
+      service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+      {{- if .Values.gateway.internalLbSubnet }}
+      service.beta.kubernetes.io/azure-load-balancer-internal-subnet: {{ .Values.gateway.internalLbSubnet | quote }}
+      {{- end }}
+  listeners:
+    - name: shell
+      hostname: {{ .Values.domains.shell | quote }}
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: artifacts-corp-com-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              artifacts.corp.com/routes: allowed
+    - name: content
+      hostname: "*.{{ .Values.domains.artifacts }}"
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: wildcard-corp-artifacts-net-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              artifacts.corp.com/routes: allowed
+    - name: intake
+      hostname: {{ .Values.domains.intakeInternal | quote }}
+      port: 8080
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same

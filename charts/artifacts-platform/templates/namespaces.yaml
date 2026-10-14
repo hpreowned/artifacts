@@ -1,0 +1,57 @@
+# Namespaces for Publish-to-AKS (DESIGN §6.7, §6.8, D11). Replaces deploy/namespaces.yaml.
+#
+#   artifacts-system   in mesh; intake-api, scanner-worker, viewer-shell, the Istio Gateway, tls-sync
+#   artifacts-static   in mesh; static-gateway with the read-only Blob mount
+#   artifacts-dynamic  NOT in mesh; one Deployment per approved Python artifact; PSA restricted
+#
+# All three carry artifacts.corp.com/routes=allowed because the Gateway's allowedRoutes selector must also
+# match its own namespace for the viewer-shell and intake routes to attach.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: artifacts-system
+  labels:
+    istio.io/dataplane-mode: ambient
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    artifacts.corp.com/routes: allowed
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: artifacts-static
+  labels:
+    istio.io/dataplane-mode: ambient
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    artifacts.corp.com/routes: allowed
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: artifacts-dynamic
+  labels:
+    # no istio.io/dataplane-mode label on purpose (D11)
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    artifacts.corp.com/routes: allowed
+---
+# 50 artifact pods at the §6.6 limits (500m / 512Mi) is exactly 25 CPU / 25Gi by default.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: artifacts-dynamic-quota
+  namespace: artifacts-dynamic
+spec:
+  hard:
+    pods: {{ .Values.resourceQuota.pods | quote }}
+    requests.cpu: {{ .Values.resourceQuota.requestsCpu | quote }}
+    requests.memory: {{ .Values.resourceQuota.requestsMemory | quote }}
+    limits.cpu: {{ .Values.resourceQuota.limitsCpu | quote }}
+    limits.memory: {{ .Values.resourceQuota.limitsMemory | quote }}
+    configmaps: {{ .Values.resourceQuota.configmaps | quote }}
+    services: {{ .Values.resourceQuota.services | quote }}

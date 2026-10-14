@@ -1,0 +1,22 @@
+{
+  "name": "scanner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Scan queue worker: intake, secrets, malware, HTML and Python stages, verdict, static publish, python pipeline trigger, GC. See README.md.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && node dist/scanner/src/main.js",
+    "test": "npm run build && node --test dist/scanner/src/test/*.test.js"
+  },
+  "dependencies": {
+    "@azure/identity": "4.14.0",
+    "@azure/service-bus": "7.10.0",
+    "@azure/storage-blob": "12.34.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "typescript": "5.9.3"
+  }
+}

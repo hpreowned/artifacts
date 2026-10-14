@@ -6,13 +6,13 @@
   <inbound>
     <base />
     <choose>
-      <when condition="@(!context.Request.Headers.ContainsKey("Authorization"))">
+      <when condition="@(!context.Request.Headers.ContainsKey(&quot;Authorization&quot;))">
         <return-response>
           <set-status code="401" reason="Unauthorized" />
         </return-response>
       </when>
     </choose>
-    <rate-limit-by-key calls="30" renewal-period="60" counter-key="@(context.Request.Headers.GetValueOrDefault("Authorization", ""))" />
+    <rate-limit-by-key calls="30" renewal-period="60" counter-key="@(context.Request.Headers.GetValueOrDefault(&quot;Authorization&quot;, &quot;&quot;))" />
     <validate-content unspecified-content-type-action="ignore" max-size="33554432" size-exceeded-action="prevent" errors-variable-name="requestBodyValidation" />
     <set-header name="X-Publisher-Oid" exists-action="delete" />
     <set-header name="X-Publisher-Upn" exists-action="delete" />

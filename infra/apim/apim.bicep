@@ -108,42 +108,38 @@ resource polBeginPublish 'Microsoft.ApiManagement/service/apis/operations/polici
   parent: opBeginPublish
   name: 'policy'
   properties: { format: 'rawxml', value: loadTextContent('policies/rest-entra.xml') }
-  dependsOn: [restApi, nvTenant, nvMcpClient]
+  dependsOn: [nvTenant, nvMcpClient]
 }
 
 resource polGetStatus 'Microsoft.ApiManagement/service/apis/operations/policies@2024-05-01' = {
   parent: opGetStatus
   name: 'policy'
   properties: { format: 'rawxml', value: loadTextContent('policies/rest-entra.xml') }
-  dependsOn: [restApi, nvTenant, nvMcpClient]
+  dependsOn: [nvTenant, nvMcpClient]
 }
 
 resource polUpload 'Microsoft.ApiManagement/service/apis/operations/policies@2024-05-01' = {
   parent: opUpload
   name: 'policy'
   properties: { format: 'rawxml', value: loadTextContent('policies/upload-finalize.xml') }
-  dependsOn: [restApi]
 }
 
 resource polFinalize 'Microsoft.ApiManagement/service/apis/operations/policies@2024-05-01' = {
   parent: opFinalize
   name: 'policy'
   properties: { format: 'rawxml', value: loadTextContent('policies/upload-finalize.xml') }
-  dependsOn: [restApi]
 }
 
 resource polEvents 'Microsoft.ApiManagement/service/apis/operations/policies@2024-05-01' = {
   parent: opEvents
   name: 'policy'
   properties: { format: 'rawxml', value: loadTextContent('policies/internal-404.xml') }
-  dependsOn: [restApi]
 }
 
 resource polViewToken 'Microsoft.ApiManagement/service/apis/operations/policies@2024-05-01' = {
   parent: opViewToken
   name: 'policy'
   properties: { format: 'rawxml', value: loadTextContent('policies/internal-404.xml') }
-  dependsOn: [restApi]
 }
 
 // 2. MCP server over beginPublish + getPublishStatus. Endpoint: https://<host>/artifacts-mcp/mcp
@@ -174,7 +170,6 @@ resource mcpServer 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
       }
     ]
   }
-  dependsOn: [restApi]
 }
 
 resource mcpPolicyRes 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-preview' = {

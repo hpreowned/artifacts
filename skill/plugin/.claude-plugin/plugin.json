@@ -1,0 +1,5 @@
+{
+  "name": "publish-to-aks",
+  "version": "0.1.0",
+  "description": "Publish an HTML/JS or small Python artifact to the internal AKS artifact host instead of claude.ai. Bundles the publish-to-aks skill and registers the Artifacts MCP server exposed by APIM."
+}

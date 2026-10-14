@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://artifacts.corp.com/schemas/manifest-v2.json",
+  "title": "Artifact manifest v2",
+  "description": "Written by the publish-to-aks skill (or artifactctl) into dist/manifest.json. Validated by intake-api at stage 1. The tier is a claim; the scanner verifies it by content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "tier", "entrypoint", "ttlDays", "generatedBy"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{2,62}$",
+      "description": "Human label. The artifact id is assigned by intake-api; the name is not an identifier."
+    },
+    "tier": { "enum": ["static", "python"] },
+    "runtime": {
+      "description": "Curated runtime line for python artifacts. null for static.",
+      "enum": ["python-1", null]
+    },
+    "entrypoint": { "enum": ["index.html", "app.py"] },
+    "externalScripts": {
+      "type": "array",
+      "maxItems": 20,
+      "default": [],
+      "items": {
+        "type": "string",
+        "pattern": "^https://(cdnjs\\.cloudflare\\.com/ajax/libs/|cdn\\.jsdelivr\\.net/npm/)[^\\s\"'<>]+$"
+      },
+      "description": "Every <script src> in the bundle must appear here and must match the allowlisted CDN prefixes."
+    },
+    "ttlDays": { "type": "integer", "minimum": 1, "maximum": 90, "default": 14 },
+    "generatedBy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tool"],
+      "properties": {
+        "tool": { "enum": ["cowork", "claude-code", "artifactctl", "other"] },
+        "model": { "type": "string", "maxLength": 100 },
+        "session": { "type": "string", "maxLength": 200 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "tier": { "const": "python" } } },
+      "then": {
+        "required": ["runtime"],
+        "properties": { "runtime": { "const": "python-1" }, "entrypoint": { "const": "app.py" } }
+      }
+    },
+    {
+      "if": { "properties": { "tier": { "const": "static" } } },
+      "then": {
+        "properties": { "runtime": { "const": null }, "entrypoint": { "const": "index.html" } }
+      }
+    }
+  ]
+}

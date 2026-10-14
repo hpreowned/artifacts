@@ -32,7 +32,7 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 |---|---|---|---|---|---|
 | T01 | Repo, control files, contracts, corpus | orchestrator | done | this commit | initial commit |
 | T02 | Integrate M1: run `tests/negative.sh` on the merged local stack, fix seams | orchestrator | todo | corpus passes locally | |
-| T03 | Standup page generated from this file | orchestrator | todo | page link in daily log | |
+| T03 | Standup page generated from this file | orchestrator | done | page link in daily log | `gen-status.py` → https://claude.ai/code/artifact/122a8acb-4551-49b9-b8dd-eab812cbbc8f |
 | T10 | `intake-api/`: every operation in `contracts/intake-openapi.yaml`; job store behind an interface (memory + Blob); one-time upload tokens; `/events` transitions per `contracts/states.md`; `/view-token` HMAC minting | agent-intake | todo | `npm test` offline; OpenAPI conformance test for each operation | |
 | T11 | `scanner/`: queue worker (memory + Service Bus); stages IN, SEC (gitleaks via child process, skip-with-warning when binary absent), MAL (Defender tag reader behind an interface, memory fake), HTML (`checks.ts`), PY (`imports.py` stdlib `ast` + `checks.ts`), `policy.ts` verdict; static publish = copy to a serving store (memory + Blob); python = pipeline trigger behind an interface (fake + Azure DevOps REST) | agent-intake | todo | every `tests/corpus/*/expected.json` rule asserted by a unit test | |
 | T12 | Local dev stack: one command runs intake + worker in-process with memory backends and a local `serving/` directory | agent-intake | todo | documented in `intake-api/README.md`; `artifactctl publish` of `static-ok` reaches `live` | |
@@ -74,4 +74,4 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 
 ## Daily log (append-only, one line per day)
 
-- 2026-10-14 — Day 1. Repo initialised. `DESIGN.md` v2, contracts, 21-bundle corpus, control files committed. Four agents launched: intake, serve, client, platform.
+- 2026-10-14 — Day 1. Repo initialised. `DESIGN.md` v2, contracts, 21-bundle corpus, control files committed. Four agents launched: intake, serve, client, platform. Standup page: https://claude.ai/code/artifact/122a8acb-4551-49b9-b8dd-eab812cbbc8f

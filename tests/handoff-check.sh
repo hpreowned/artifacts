@@ -43,11 +43,24 @@ run_suite() {
 }
 
 echo "== unit suites =="
-run_suite "intake-api: npm test"     intake-api     bash -c "npm ci --silent && npm test"
-run_suite "scanner: npm test"        scanner        bash -c "npm ci --silent && npm test"
-run_suite "static-gateway: npm test" static-gateway bash -c "npm ci --silent && npm test"
-run_suite "viewer-shell: npm test"   viewer-shell   bash -c "npm ci --silent && npm test"
-run_suite "cli: npm test"            cli            bash -c "npm ci --silent && npm test"
+# Install every directory's dependencies up front, before running any test: intake-api's tsconfig
+# compiles ../scanner/src alongside its own, so its test needs scanner/node_modules present even though
+# scanner is a separate package -- installing per-directory right before each test (the obvious order)
+# fails on a from-scratch clone for that reason alone.
+for d in intake-api scanner static-gateway viewer-shell cli; do
+  if [ ! -d "$ROOT/$d/node_modules" ]; then
+    if ! (cd "$ROOT/$d" && npm ci --silent) >/tmp/handoff-check.$$ 2>&1; then
+      fail "npm ci in $d (see output below)"
+      sed 's/^/     | /' /tmp/handoff-check.$$
+    fi
+    rm -f /tmp/handoff-check.$$
+  fi
+done
+run_suite "intake-api: npm test"     intake-api     npm test
+run_suite "scanner: npm test"        scanner        npm test
+run_suite "static-gateway: npm test" static-gateway npm test
+run_suite "viewer-shell: npm test"   viewer-shell   npm test
+run_suite "cli: npm test"            cli            npm test
 
 echo "== skill test scripts =="
 if [ -d "$ROOT/skill/tests" ]; then

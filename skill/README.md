@@ -8,15 +8,31 @@
 | `publish-to-aks/scripts/preflight.sh` | Fast feedback before publishing. Bash + grep/sed/find; uses `python3` when present for exact manifest validation and the stdlib list. Sources `preflight-python.sh`; calls `preflight-manifest.py`. |
 | `publish-to-aks/scripts/upload.sh` | Zip `dist/`, PUT, finalize. Prints `UPLOADED <jobId> <sha256>` (exit 0) or `NETWORK_BLOCKED` (exit 2). |
 | `tools/gen-libraries.py` | `gen-libraries.py <runtime-manifest.json> <out.md>`; the platform CI runs the same script against the manifest it publishes. |
-| `tests/` | `preflight.test.sh`, `upload.test.sh` (uses `fake-intake.py`, python3 stdlib). |
-| `plugin/` | Plugin packaging for skills repos that accept plugins. See `plugin/README.md`. |
+| `tests/` | `preflight.test.sh`, `upload.test.sh` (uses `fake-intake.py`, python3 stdlib), `plugin.test.sh`. |
+| `plugin/` | `.claude-plugin/plugin.json`, `.mcp.json`, `build.sh`. Packaging for the skills repo, both layouts. See `plugin/README.md`. |
 
 ## Run the tests
 
 ```
 bash skill/tests/preflight.test.sh   # every corpus bundle, with and without python3 on PATH
 bash skill/tests/upload.test.sh      # upload.sh against a fake intake on 127.0.0.1 (needs python3)
+bash skill/tests/plugin.test.sh      # builds both zips and checks their layout
 ```
+
+## Shipping to the skills repo
+
+Which layout to upload depends on what the repo accepts; `plugin/build.sh` produces either.
+
+- **Repo accepts plugins** — `bash skill/plugin/build.sh plugin` → `publish-to-aks.plugin.zip`:
+  `.claude-plugin/plugin.json` + `.mcp.json` at the root, the skill under `skills/publish-to-aks/`. The
+  `.mcp.json` registers the `artifacts` MCP server (APIM) so the connector travels with the skill.
+- **Repo accepts only skills** — `bash skill/plugin/build.sh skill` → `publish-to-aks.skill.zip`: just
+  `publish-to-aks/{SKILL.md,reference/,scripts/}`, the folder name equal to the skill `name`. No `.mcp.json`
+  can ship this way, so the "Artifacts" connector is added once by a Claude org Owner (Settings → Connectors,
+  integration item I5). The skill text already tells the model to stop if the connector is missing.
+
+Neither zip has a top-level `bin/`, `tests/` or `tools/`. Both are deterministic, so re-building an unchanged
+skill gives byte-identical zips.
 
 No network access is needed. `artifactctl preflight <dir>` runs the same `preflight.sh`, so there is one implementation.
 

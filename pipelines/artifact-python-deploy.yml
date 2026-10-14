@@ -1,0 +1,170 @@
+# Deploys one approved Python artifact, DESIGN §6.12, D10, D12.
+# Triggered by the scanner worker: POST .../_apis/pipelines/<id>/runs?api-version=7.1 with
+# templateParameters { jobId, artifactId } (artifactId is needed by render.sh; see deploy/README.md).
+# Human approval is the check on Environment artifacts-dynamic (group artifacts-approvers, 7 days), not YAML.
+#
+# Variable group artifacts-platform (Key Vault-linked for the secret):
+#   PIPELINE_TOKEN        secret, Key Vault secret pipeline-token
+#   INTAKE_EVENTS_URL     http://intake.artifacts.internal:8080/v1/publish   (callback: <url>/<jobId>/events)
+#   STORAGE_ACCOUNT       <storage-account>
+#   PYTHON_RUNTIME_IMAGE  jfrog.corp.com/artifacts/python-runtime@sha256:<digest>
+parameters:
+  - name: jobId
+    type: string
+  - name: artifactId
+    type: string
+  - name: entrypoint
+    displayName: Entrypoint (auto = detect from app.py)
+    type: string
+    default: auto
+    values: [auto, streamlit, fastapi]
+
+trigger: none
+pr: none
+
+pool:
+  name: <your-vnet-pool>
+
+variables:
+  - group: artifacts-platform
+  - name: runUrl
+    value: $(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)
+
+stages:
+  - stage: Fetch
+    displayName: Fetch and scan
+    jobs:
+      - job: fetch
+        steps:
+          - checkout: self
+          - task: AzureCLI@2
+            displayName: Download bundle from intake
+            inputs:
+              azureSubscription: <storage-connection>
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az storage blob download --auth-mode login --account-name "$(STORAGE_ACCOUNT)" \
+                  -c intake -n "${{ parameters.jobId }}.zip" -f bundle.zip
+                mkdir -p bundle && unzip -q bundle.zip -d bundle
+                test -f bundle/app.py && test -f bundle/manifest.json
+                ls -la bundle
+          - script: |
+              set -euo pipefail
+              gitleaks detect --source bundle --no-git --exit-code 1 \
+                --config "$(Build.SourcesDirectory)/.gitleaks.toml" \
+                --report-format sarif --report-path "$(Build.ArtifactStagingDirectory)/gitleaks.sarif"
+            displayName: gitleaks (deny on finding)
+            name: gitleaks
+          - script: echo "##vso[task.setvariable variable=state;isOutput=true]rejected"
+            displayName: Mark rejected on gitleaks finding
+            name: verdict
+            condition: failed()
+          - task: SonarQubePrepare@7
+            displayName: Sonar prepare (advisory)
+            continueOnError: true
+            inputs:
+              SonarQube: <sonar-connection>
+              scannerMode: cli
+              configMode: manual
+              cliProjectKey: artifacts-python
+              cliProjectName: Published Python artifacts
+              cliSources: bundle
+              extraProperties: |
+                sonar.projectVersion=${{ parameters.jobId }}
+                sonar.python.version=3.12
+          - task: SonarQubeAnalyze@7
+            displayName: Sonar analyze (advisory, no quality gate)
+            continueOnError: true
+          - publish: bundle
+            artifact: bundle
+            displayName: Publish bundle
+          - script: |
+              set -euo pipefail
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"awaiting_approval\",\"runUrl\":\"$(runUrl)\",\"message\":\"gitleaks clean; Sonar report on the run; waiting for artifacts-approvers\"}"
+            displayName: Callback awaiting_approval
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+  - stage: Deploy
+    dependsOn: Fetch
+    condition: succeeded()
+    jobs:
+      - deployment: deploy
+        environment: artifacts-dynamic
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - download: current
+                  artifact: bundle
+                - script: |
+                    set -euo pipefail
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"deploying\",\"runUrl\":\"$(runUrl)\"}"
+                  displayName: Callback deploying
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+                - script: |
+                    set -euo pipefail
+                    bundle="$(Pipeline.Workspace)/bundle"
+                    ttl="$(jq -r '.ttlDays' "$bundle/manifest.json")"
+                    expires="$(date -u -d "+${ttl} days" +%Y-%m-%dT%H:%M:%SZ)"
+                    entry="${{ parameters.entrypoint }}"
+                    if [ "$entry" = auto ]; then
+                      if grep -Eq '^(import|from) streamlit' "$bundle/app.py"; then entry=streamlit; else entry=fastapi; fi
+                    fi
+                    echo "artifact=${{ parameters.artifactId }} entrypoint=$entry expires=$expires image=$(PYTHON_RUNTIME_IMAGE)"
+                    deploy/python-artifact/render.sh "${{ parameters.artifactId }}" "$bundle/app.py" "$expires" "$entry" "$(PYTHON_RUNTIME_IMAGE)" \
+                      > "$(Pipeline.Workspace)/manifests.yaml"
+                  displayName: Render manifests
+                - task: KubernetesManifest@1
+                  displayName: kubectl apply (AKS service connection)
+                  inputs:
+                    action: deploy
+                    kubernetesServiceConnection: <aks-connection>
+                    namespace: artifacts-dynamic
+                    manifests: $(Pipeline.Workspace)/manifests.yaml
+                    rolloutStatusTimeout: "180"
+                - script: |
+                    set -euo pipefail
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"live\",\"runUrl\":\"$(runUrl)\"}"
+                  displayName: Callback live
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+  - stage: Report
+    displayName: Report failure or rejection
+    dependsOn: [Fetch, Deploy]
+    condition: and(always(), ne(dependencies.Deploy.result, 'Succeeded'))
+    variables:
+      fetchResult: $[ stageDependencies.Fetch.fetch.result ]
+      deployResult: $[ dependencies.Deploy.result ]
+      fetchVerdict: $[ stageDependencies.Fetch.fetch.outputs['verdict.state'] ]
+    jobs:
+      - job: report
+        steps:
+          - script: |
+              set -euo pipefail
+              fetch="$(fetchResult)"; deploy="$(deployResult)"; verdict="$(fetchVerdict)"
+              echo "fetch=$fetch deploy=$deploy verdict=$verdict"
+              if [ "$fetch" != "Succeeded" ]; then
+                if [ "$verdict" = "rejected" ]; then state=rejected; msg="gitleaks found a secret in the bundle"; else state=failed; msg="fetch or scan stage failed"; fi
+              elif [ "$deploy" = "Failed" ]; then
+                state=failed; msg="deploy stage failed"
+              else
+                state=rejected; msg="approval declined or timed out in Azure DevOps"
+              fi
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"$state\",\"runUrl\":\"$(runUrl)\",\"message\":\"$msg\"}"
+            displayName: Callback failed or rejected
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)

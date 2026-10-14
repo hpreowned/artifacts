@@ -1,0 +1,91 @@
+# Nightly garbage collection, DESIGN §6.12 last paragraph, D12.
+#   1. Delete every object in artifacts-dynamic whose artifacts.corp.com/expires-at label is in the past
+#      (label form 2026-10-28T00-00-00Z: fixed-width UTC, so text comparison orders correctly).
+#   2. Delete serving/<id>/ for every expired static artifact listed by intake-api's job records
+#      (jobs/<jobId>.json with artifactId, tier, state, expiresAt) and post `expired` for each.
+# Same pool and AKS service connection as artifact-python-deploy.yml. Variable group artifacts-platform.
+schedules:
+  - cron: "0 3 * * *"
+    displayName: Nightly artifact GC
+    branches:
+      include: [main]
+    always: true
+
+trigger: none
+pr: none
+
+pool:
+  name: <your-vnet-pool>
+
+variables:
+  - group: artifacts-platform
+
+jobs:
+  - job: gc_dynamic
+    displayName: Expire Python artifacts in artifacts-dynamic
+    steps:
+      - task: Kubernetes@1
+        displayName: kubectl login
+        inputs:
+          connectionType: Kubernetes Service Connection
+          kubernetesServiceEndpoint: <aks-connection>
+          namespace: artifacts-dynamic
+          command: login
+      - script: |
+          set -euo pipefail
+          now="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+          echo "now=$now"
+          kubectl -n artifacts-dynamic get deploy -l artifacts.corp.com/expires-at -o json \
+            | jq -r --arg now "$now" '.items[] | select(.metadata.labels["artifacts.corp.com/expires-at"] < $now) | .metadata.labels["artifacts.corp.com/id"]' \
+            | sort -u > expired-ids.txt
+          echo "expired: $(wc -l < expired-ids.txt)"
+          while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            echo "deleting art-$id"
+            kubectl -n artifacts-dynamic delete deploy,svc,configmap,httproutes.gateway.networking.k8s.io \
+              -l "artifacts.corp.com/id=$id" --ignore-not-found
+          done < expired-ids.txt
+        displayName: Delete expired Deployments, Services, ConfigMaps, HTTPRoutes
+      - task: Kubernetes@1
+        displayName: kubectl logout
+        condition: always()
+        inputs:
+          connectionType: Kubernetes Service Connection
+          kubernetesServiceEndpoint: <aks-connection>
+          command: logout
+
+  - job: gc_static
+    displayName: Expire static artifacts in Blob
+    steps:
+      - task: AzureCLI@2
+        displayName: Delete expired serving/<id>/ prefixes
+        inputs:
+          azureSubscription: <storage-connection>
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
+            acct="$(STORAGE_ACCOUNT)"
+            now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            az storage blob list --auth-mode login --account-name "$acct" -c jobs --num-results '*' --query '[].name' -o tsv > jobs.txt
+            echo "job records: $(wc -l < jobs.txt)"
+            : > expired.tsv
+            while IFS= read -r name; do
+              [ -n "$name" ] || continue
+              az storage blob download --auth-mode login --account-name "$acct" -c jobs -n "$name" -f job.json --no-progress >/dev/null
+              jq -r --arg now "$now" --arg job "$name" \
+                'select(.state=="live" and .expiresAt < $now) | [($job | sub("\\.json$"; "")), .tier, .artifactId] | @tsv' job.json >> expired.tsv || true
+            done < jobs.txt
+            echo "expired live artifacts: $(wc -l < expired.tsv)"
+            while IFS=$'\t' read -r jobId tier artifactId; do
+              [ -n "$artifactId" ] || continue
+              if [ "$tier" = static ]; then
+                echo "deleting serving/$artifactId/"
+                az storage blob delete-batch --auth-mode login --account-name "$acct" --source serving --pattern "$artifactId/*"
+              fi
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/$jobId/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d '{"state":"expired","message":"removed by artifact-gc"}' || echo "callback failed for $jobId"
+            done < expired.tsv
+        env:
+          PIPELINE_TOKEN: $(PIPELINE_TOKEN)

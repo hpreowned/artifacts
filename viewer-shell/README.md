@@ -13,13 +13,13 @@ What `GET /view/<artifactId>` does, in order:
 Response headers on every response:
 
 ```
-Content-Security-Policy: default-src 'self'; frame-src <ARTIFACT_SCHEME>://*.<ARTIFACT_DOMAIN>; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+Content-Security-Policy: default-src 'self'; frame-src <ARTIFACT_SCHEME>://*.<ARTIFACT_DOMAIN>; script-src 'self'; style-src 'self' 'sha256-<hash of the inline stylesheet>'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
 X-Content-Type-Options: nosniff
 Referrer-Policy: no-referrer
 Cache-Control: private, no-store
 ```
 
-`Cache-Control` is in addition to the spec: the page embeds a 5-minute token and must not be cached. The page contains no scripts at all.
+This is DESIGN §6.4's shell CSP (`default-src 'self'; frame-src ...; script-src 'self'; style-src 'self'`) plus three tightenings (`base-uri`, `form-action`, `frame-ancestors`). The page's single `<style>` block is allowed by its SHA-256 hash, computed once at start from the constant in `src/page.ts`, so there is no `'unsafe-inline'`. `Cache-Control` is in addition to the spec: the page embeds a 5-minute token and must not be cached. The page contains no scripts at all.
 
 Other routes: `GET /auth/callback` (Entra redirect target), `GET /healthz` → `200 ok` for probes. Everything else is `404`; non-GET is `405`.
 

@@ -1,13 +1,14 @@
 import { test, after, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { MsalAuthenticator, type AuthCodeClient } from '../src/auth.js';
-import { BANNER_TEXT } from '../src/page.js';
+import { BANNER_TEXT, STYLE_HASH } from '../src/page.js';
 import { signToken } from '../src/signed-token.js';
 import { ARTIFACT_ID, GRANT, NOW, SESSION_KEY, startShell, type TestShell } from './helpers.js';
 
 const EXPECTED_CSP =
-  "default-src 'self'; frame-src http://*.localhost:8081; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+  `default-src 'self'; frame-src http://*.localhost:8081; script-src 'self'; style-src 'self' '${STYLE_HASH}'; ` +
+  "base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 describe('viewer-shell with DEV_AUTH', () => {
   let s: TestShell;
@@ -28,6 +29,11 @@ describe('viewer-shell with DEV_AUTH', () => {
     assert.ok(r.body.includes('AI-generated artifact. Never enter passwords or credentials here.'));
     assert.ok(!r.body.includes('Expires'), 'no expiry shown when intake did not send one');
     assert.ok(!r.body.includes('<script'), 'page has no scripts; CSP script-src self would block inline anyway');
+    assert.ok(!EXPECTED_CSP.includes('unsafe-inline'), 'no unsafe-inline anywhere in the shell CSP');
+    const inlineStyle = /<style>([\s\S]*?)<\/style>/.exec(r.body)?.[1];
+    assert.ok(inlineStyle, 'exactly one inline <style> block');
+    assert.equal(`sha256-${createHash('sha256').update(inlineStyle, 'utf8').digest('base64')}`, STYLE_HASH, 'style-src hash matches the served <style> block');
+    assert.ok(!/ style=/.test(r.body), 'no inline style attributes (the hash only covers the <style> element)');
     const banner = r.body.indexOf('class="banner"');
     const iframe = r.body.indexOf('<iframe');
     assert.ok(banner > 0 && iframe > banner, 'banner is above the frame');

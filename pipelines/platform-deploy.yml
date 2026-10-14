@@ -1,12 +1,14 @@
-# Builds the platform images, pushes them to JFrog, applies deploy/ to the cluster (D12: the only path to AKS).
-# The agents in <your-vnet-pool> are assumed to be logged in to jfrog.corp.com already (they build the org's
-# other images), so no registry service connection is introduced here. python-runtime has its own job because
-# it is referenced by digest and its runtime-manifest.json feeds the scanner and the skill reference.
+# Builds the platform images, pushes them to JFrog, installs charts/artifacts-platform on the cluster (D12:
+# the only path to AKS). The agents in <your-vnet-pool> are assumed to be logged in to jfrog.corp.com already
+# (they build the org's other images), so no registry service connection is introduced here. python-runtime
+# has its own job because it is referenced by digest and its runtime-manifest.json feeds the scanner and the
+# skill reference.
 #
-# Image tags: pushed as jfrog.corp.com/artifacts/<name>:$(Build.BuildId) (T50). The Deploy stage substitutes
-# that tag into every deploy/platform/*.yaml's literal `:<tag>` placeholder with `sed` (chosen over
-# `kustomize edit set image` so deploy/ needs no kustomization.yaml); see "Substitute image tags" below and
-# deploy/README.md's apply-order step 6.
+# Image tags: pushed as jfrog.corp.com/artifacts/<name>:$(Build.BuildId) (T50). The Deploy stage passes that
+# tag to Helm as `--set images.<name>=<registry>/<name>:$(tag)` for each of the four images (T71: the raw
+# deploy/platform/*.yaml manifests this used to `sed` a `:<tag>` placeholder into are gone; the chart takes
+# the full image reference as a value instead). See "helm upgrade --install" below and
+# deploy/README.md's install-order section.
 trigger:
   branches:
     include: [main]
@@ -95,32 +97,37 @@ stages:
     condition: succeeded()
     jobs:
       - deployment: apply
-        displayName: Apply deploy/ to AKS
+        displayName: helm upgrade --install artifacts-platform
         environment: artifacts-platform
         strategy:
           runOnce:
             deploy:
               steps:
                 - checkout: self
-                - script: |
-                    set -euo pipefail
-                    out="$(Build.ArtifactStagingDirectory)/manifests"
-                    mkdir -p "$out"
-                    # order matters only for first apply; kubectl retries unknown kinds after CRDs exist
-                    for f in deploy/namespaces.yaml deploy/gateway.yaml deploy/routes-static.yaml deploy/networkpolicy-dynamic.yaml deploy/platform/*.yaml; do
-                      sed "s|:<tag>|:$(tag)|g" "$f" > "$out/$(basename "$f")"
-                    done
-                    grep -l '<' "$out"/*.yaml | xargs -r grep -n '<[a-z-]*>' || true
-                    ls "$out"
-                  displayName: Substitute image tags
-                - task: Kubernetes@1
-                  displayName: kubectl apply -f manifests/
+                # HelmDeploy@1 over a plain script step: it resolves the AKS service connection to a
+                # kubeconfig itself (no separate `az aks get-credentials` / kubectl-config step needed, the
+                # way the Kubernetes@1 apply below already relies on `connectionType: Kubernetes Service
+                # Connection`), and its overrideValues/valueFile inputs map directly onto `helm upgrade
+                # --install --set ... -f ...` without hand-building a command line. The four images are the
+                # ones pipelines/platform-deploy.yml's Build stage just pushed; python-runtime is not one of
+                # them (D12: it is referenced by digest from python-runtime/test-emit-manifest.sh's
+                # runtime-manifest.json, not from this chart). <platform-values-file> is a values file a
+                # person maintains outside this repo (deploy/README.md "Helm install" section) -- it holds
+                # tenant/subscription identifiers, never secrets (CLAUDE.md: no secrets anywhere).
+                - task: HelmDeploy@1
+                  displayName: helm upgrade --install artifacts-platform
                   inputs:
                     connectionType: Kubernetes Service Connection
                     kubernetesServiceEndpoint: <aks-connection>
-                    command: apply
-                    useConfigurationFile: true
-                    configuration: $(Build.ArtifactStagingDirectory)/manifests
+                    namespace: artifacts-system
+                    command: upgrade
+                    chartType: FilePath
+                    chartPath: charts/artifacts-platform
+                    releaseName: artifacts-platform
+                    install: true
+                    valueFile: <platform-values-file>
+                    overrideValues: images.intakeApi=$(registry)/intake-api:$(tag),images.scannerWorker=$(registry)/scanner:$(tag),images.staticGateway=$(registry)/static-gateway:$(tag),images.viewerShell=$(registry)/viewer-shell:$(tag)
+                    arguments: --wait --timeout 5m
                 - task: Kubernetes@1
                   displayName: rollout status
                   inputs:

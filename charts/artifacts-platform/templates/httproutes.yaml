@@ -1,8 +1,8 @@
-# HTTPRoutes for the static tier and the two platform hostnames (DESIGN §6.8).
+# HTTPRoutes for the static tier and the two platform hostnames (DESIGN §6.8). Replaces deploy/routes-static.yaml.
 # No ReferenceGrant is needed: every backendRef is in the route's own namespace, and cross-namespace
 # parentRefs are authorised by the Gateway's allowedRoutes selector, not by ReferenceGrant.
 #
-# artifacts.corp.com -> viewer-shell (same namespace as the Gateway)
+# {{ .Values.domains.shell }} -> viewer-shell (same namespace as the Gateway)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -14,13 +14,13 @@ spec:
       namespace: artifacts-system
       sectionName: shell
   hostnames:
-    - artifacts.corp.com
+    - {{ .Values.domains.shell | quote }}
   rules:
     - backendRefs:
         - name: viewer-shell
           port: 8080
 ---
-# intake.artifacts.internal -> intake-api, APIM's backend (DESIGN §6.11). Only /v1/ is routed; the
+# {{ .Values.domains.intakeInternal }} -> intake-api, APIM's backend (DESIGN §6.11). Only /v1/ is routed; the
 # x-internal operations (/v1/publish/{jobId}/events, /v1/view-token) are reachable here from inside the VNet,
 # which is why intake-api authenticates them with the pipeline token and the internal shared key.
 apiVersion: gateway.networking.k8s.io/v1
@@ -34,7 +34,7 @@ spec:
       namespace: artifacts-system
       sectionName: intake
   hostnames:
-    - intake.artifacts.internal
+    - {{ .Values.domains.intakeInternal | quote }}
   rules:
     - matches:
         - path:
@@ -44,9 +44,10 @@ spec:
         - name: intake-api
           port: 8080
 ---
-# *.corp-artifacts.net -> static-gateway, which maps the Host header to serving/<id>/ (DESIGN §6.4).
-# Python artifacts add exact-host routes (<id>.corp-artifacts.net) in artifacts-dynamic; Gateway API
-# prefers the exact hostname over this wildcard, so this is the static fallback.
+# *.{{ .Values.domains.artifacts }} -> static-gateway, which maps the Host header to serving/<id>/ (DESIGN
+# §6.4). Python artifacts add exact-host routes (<id>.{{ .Values.domains.artifacts }}) in artifacts-dynamic
+# (charts/artifact-python); Gateway API prefers the exact hostname over this wildcard, so this is the static
+# fallback.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -58,7 +59,7 @@ spec:
       namespace: artifacts-system
       sectionName: content
   hostnames:
-    - "*.corp-artifacts.net"
+    - "*.{{ .Values.domains.artifacts }}"
   rules:
     - backendRefs:
         - name: static-gateway

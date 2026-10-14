@@ -1,45 +1,40 @@
-# deploy/ — AKS manifests, policy, node pool, artifact template
+# deploy/ — AKS policy, node pool, artifact template (platform manifests moved to charts/artifacts-platform)
 
-Everything the cluster needs for Publish-to-AKS (DESIGN §6.6–§6.8, §6.11). Applied by Azure DevOps
-(`pipelines/platform-deploy.yml`) or by hand for the one-time pieces; nothing here is applied by a service at
-run time (D12). Every `<...>` is a placeholder. Validate offline with `./deploy/validate.sh`.
+Everything the cluster needs for Publish-to-AKS (DESIGN §6.6–§6.8, §6.11) outside the one-time, per-artifact
+and policy pieces below. The platform itself — namespaces, Gateway, routes, NetworkPolicies, the mesh-root
+AuthorizationPolicy, ServiceAccounts, SecretProviderClasses, tls-sync and the four application
+Deployments/Services — is `charts/artifacts-platform` (T71; it replaced the raw manifests that used to live
+here). Applied by Azure DevOps (`pipelines/platform-deploy.yml`) or by hand for the one-time pieces; nothing
+here is applied by a service at run time (D12). Every `<...>` is a placeholder. Validate offline with
+`./deploy/validate.sh` (also lints and renders the chart and runs its conformance test).
 
 ## Layout
 
 | Path | Contents | Namespace |
 |---|---|---|
-| `namespaces.yaml` | three namespaces with PSA and mesh labels, ResourceQuota (50 pods / 25 CPU / 25Gi) | — |
-| `gateway.yaml` | Gateway `artifacts-internal`, internal LB, listeners `shell`, `content`, `intake` | artifacts-system |
-| `routes-static.yaml` | HTTPRoutes `viewer-shell`, `intake-api` (artifacts-system), `static-content` (artifacts-static) | both |
-| `networkpolicy-dynamic.yaml` | default deny both directions; ingress only from the Gateway pods on 8080 | artifacts-dynamic |
-| `networkpolicy-system.yaml` | ingress to intake-api only from the Gateway, scanner-worker and viewer-shell pods on 8080 (T18); no egress rules | artifacts-system |
-| `authz-mesh-root.yaml` | mesh-root ALLOW policy, staged (see below) | artifacts-static, then istio-system |
-| `platform/serviceaccounts.yaml`, `platform/secretproviderclass.yaml` | workload-identity ServiceAccounts; Key Vault → Secret mirrors incl. the two `kubernetes.io/tls` certs | artifacts-system |
-| `platform/tls-sync.yaml` | pause pod that keeps the TLS SecretProviderClass mounted so the Gateway's Secrets exist | artifacts-system |
-| `platform/intake-api.yaml`, `scanner-worker.yaml`, `viewer-shell.yaml` | Deployments and Services | artifacts-system |
-| `platform/static-gateway.yaml` | ServiceAccount, SecretProviderClass, read-only Blob CSI PV/PVC, Deployment, Service | artifacts-static |
+| `../charts/artifacts-platform/` | namespaces, Gateway, HTTPRoutes, NetworkPolicies, mesh-root AuthorizationPolicy, ServiceAccounts, SecretProviderClasses, tls-sync, the four Deployments/Services, the Blob CSI PV/PVC | artifacts-system, artifacts-static, artifacts-dynamic (namespace/quota only), istio-system (stage 2) |
+| `../charts/tests/platform-conformance.sh` | asserts the chart's `helm template` output still carries everything the deleted raw manifests had | laptop |
 | `python-artifact/template.yaml`, `render.sh`, `test-render.sh` | DESIGN §6.6 Deployment + ConfigMap + Service + HTTPRoute per artifact | artifacts-dynamic |
 | `policy/azure-policy-assign.sh` | restricted initiative, allowed images, no capabilities, no hostPath, effect deny | cluster |
 | `policy/nodepool-untrusted.sh` | tainted `untrusted` node pool in its own subnet | cluster |
-| `validate.sh` | YAML parse of every manifest and pipeline, `bash -n` of every script, the render test | laptop |
+| `validate.sh` | YAML parse of every manifest and pipeline, `bash -n` of every script, `helm lint`/`helm template`/the conformance test, the render test | laptop |
 
-## Apply order (needs the cluster)
+## Helm install order (needs the cluster)
 
 Cluster prerequisites, assumed present: upstream Istio ambient with the Gateway API CRDs; Azure CNI powered by
 Cilium; workload identity and the OIDC issuer; the Secrets Store CSI add-on with the Azure provider and secret
 rotation; the Blob CSI driver (`az aks update --enable-blob-driver`); the Azure Policy add-on; images reachable
-from `jfrog.corp.com`.
+from `jfrog.corp.com`; `helm` v4.
 
 1. `policy/nodepool-untrusted.sh` — pool `untrusted`, taint `artifacts.corp.com/untrusted=true:NoSchedule`, label `agentpool=untrusted` (set by AKS from the pool name).
-2. `kubectl apply -f namespaces.yaml`
-3. `kubectl apply -f platform/serviceaccounts.yaml -f platform/secretproviderclass.yaml -f platform/tls-sync.yaml`, then wait for Secrets `artifacts-corp-com-tls` and `wildcard-corp-artifacts-net-tls` in artifacts-system (`kubectl get secret -n artifacts-system`). If they never appear, the tls-sync pod's events say why (identity, Key Vault RBAC, certificate names).
-4. `kubectl apply -f gateway.yaml`; read the internal LB IP from `kubectl get gateway -n artifacts-system artifacts-internal`; create private DNS records `artifacts.corp.com`, `*.corp-artifacts.net`, `intake.artifacts.internal` → that IP. APIM's `backendUrl` is `http://intake.artifacts.internal:8080`.
-5. `kubectl apply -f routes-static.yaml -f networkpolicy-dynamic.yaml -f networkpolicy-system.yaml`
-6. `kubectl apply -f platform/` with image tags substituted (`pipelines/platform-deploy.yml` does this; by hand: `sed "s|:<tag>|:<build-id>|g"`). `platform/intake-api.yaml` needs `ENTRA_TENANT_ID` and `ENTRA_AUDIENCE` substituted too (T18; the artifacts-mcp app registration's client id, not its Application ID URI — `infra/entra/README.md`).
-7. `policy/azure-policy-assign.sh`; wait up to 20 minutes; run the DESIGN §8 Phase 2 negative tests 4 and 5.
-8. `kubectl apply -f authz-mesh-root.yaml` (stage 1 canary); stage 2 later, below.
+2. Fill in a values file: copy `charts/artifacts-platform/values.example.yaml`, replace every placeholder with the real tenant id, Key Vault name, domains, Entra ids, image tags, managed-identity client ids, storage account, Service Bus FQDN, Azure DevOps org/project/pipeline id (every value is documented inline in `values.yaml`; none of them are secrets — secret material stays in Key Vault, reached only through the SecretProviderClasses). Leave `authzMeshRoot.enableRootPolicy: false` for the first install.
+3. `helm install artifacts-platform charts/artifacts-platform -f <your-values-file>` (or `helm upgrade --install`, idempotent either way; `pipelines/platform-deploy.yml`'s Deploy stage does this with `HelmDeploy@1`, overriding the four `images.*` values with the tag the Build stage just pushed). This creates the namespaces, ServiceAccounts, SecretProviderClasses, tls-sync, the Gateway, the HTTPRoutes, both NetworkPolicies, the canary AuthorizationPolicy, the four application Deployments/Services and the Blob CSI PV/PVC in one pass — Helm resolves the apply order within a release itself (CRDs before CRs, Namespaces before namespaced objects), so there is no more multi-step `kubectl apply` ordering to follow by hand.
+4. Wait for Secrets `artifacts-corp-com-tls` and `wildcard-corp-artifacts-net-tls` in artifacts-system (`kubectl get secret -n artifacts-system`). If they never appear, the tls-sync pod's events say why (identity, Key Vault RBAC, certificate names).
+5. Read the internal LB IP from `kubectl get gateway -n artifacts-system artifacts-internal`; create private DNS records `artifacts.corp.com`, `*.corp-artifacts.net`, `intake.artifacts.internal` → that IP. APIM's `backendUrl` is `http://intake.artifacts.internal:8080`.
+6. `policy/azure-policy-assign.sh`; wait up to 20 minutes; run the DESIGN §8 Phase 2 negative tests 4 and 5.
+7. The canary AuthorizationPolicy (stage 1) is already applied by step 3 — it always renders. Stage 2 (the istio-system mesh root): after the canary has run clean for a few days, re-run `helm upgrade --install` with `--set authzMeshRoot.enableRootPolicy=true` against the same values file. Rollback: re-run with it back at `false` (or omitted — that is the chart default), or `kubectl delete authorizationpolicy -n istio-system mesh-allow-only-mesh-principals`.
 
-What runs without the cluster: `validate.sh`, `python-artifact/test-render.sh`, both policy scripts with `--dry-run`.
+What runs without the cluster: `validate.sh` (incl. `helm lint`, `helm template` with both `values.yaml` and `values.example.yaml`, and the conformance test), `python-artifact/test-render.sh`, both policy scripts with `--dry-run`.
 
 ## Mesh root policy, audit-first without AUDIT
 
@@ -47,15 +42,15 @@ Research result (2026-10-14): ztunnel enforces only `ALLOW` and `DENY` at L4. `a
 "must use targetRefs" to a waypoint and are not enforced by ztunnel (istio.io/latest/docs/ambient/migrate/migrate-policies/).
 The `istio.io/dry-run` annotation is also unsupported on ztunnel (istio/istio discussion #57631; maintainers confirmed, info-level
 policy logging only arrives with istio/ztunnel#1745). An AUDIT duplicate of the DESIGN §6.8 policy would be silently inert, so
-`authz-mesh-root.yaml` does not contain one. The staged procedure replaces it:
+`charts/artifacts-platform/templates/authz-mesh-root.yaml` does not contain one. The staged procedure replaces it:
 
 - **Stage 0, inventory.** Who talks plaintext to mesh workloads today: `kubectl logs -n istio-system -l app=ztunnel --since=24h | grep -E 'direction="inbound"' | grep -v 'src.identity'` lists inbound connections without a source identity. ztunnel's Prometheus metrics give the same picture: `sum by (destination_workload, source_workload) (istio_tcp_connections_opened_total{connection_security_policy!="mutual_tls"})` (confirm the label values against your ztunnel version; UNVERIFIED).
-- **Stage 1, canary.** The policy in `authz-mesh-root.yaml` applies to artifacts-static only. Its only workload is static-gateway, whose only legitimate client is the Gateway, a mesh principal. Watch for `policy rejection` in the ztunnel logs for a few days: `kubectl logs -n istio-system -l app=ztunnel -f | grep -i 'policy rejection'`. Any hit names an unexpected plaintext client.
-- **Stage 2, root.** Uncomment the istio-system policy in the same file, apply, keep watching for a week. Phase 2 gate test 6 (a non-mesh test pod curling a mesh service is refused) proves it. Rollback: `kubectl delete authorizationpolicy -n istio-system mesh-allow-only-mesh-principals`.
+- **Stage 1, canary.** The policy in `charts/artifacts-platform/templates/authz-mesh-root.yaml` applies to artifacts-static only. Its only workload is static-gateway, whose only legitimate client is the Gateway, a mesh principal. Watch for `policy rejection` in the ztunnel logs for a few days: `kubectl logs -n istio-system -l app=ztunnel -f | grep -i 'policy rejection'`. Any hit names an unexpected plaintext client.
+- **Stage 2, root.** Set `authzMeshRoot.enableRootPolicy: true` in the values file (or `--set` it) and `helm upgrade --install` again; the istio-system policy in the same template file is gated on that value, so it renders only now. Keep watching for a week. Phase 2 gate test 6 (a non-mesh test pod curling a mesh service is refused) proves it. Rollback: flip the value back to `false` and re-apply, or `kubectl delete authorizationpolicy -n istio-system mesh-allow-only-mesh-principals`.
 
 ## Interfaces this directory expects from other directories
 
-**Closed at M2 (T50).** Every env var name, port and probe path in `platform/*.yaml` was read back against
+**Closed at M2 (T50).** Every env var name, port and probe path in `charts/artifacts-platform/templates/*.yaml` (then `deploy/platform/*.yaml`, since deleted by T71) was read back against
 `intake-api/src/config.ts` (shared by the worker), `static-gateway/README.md` and `viewer-shell/README.md` —
 not guessed. Fixed in this pass: `STORAGE_ACCOUNT`→`STORAGE_ACCOUNT_URL` (full blob endpoint, not a bare
 name), the three container names→`STORAGE_CONTAINER_{JOBS,INTAKE,SERVING}`, `SERVICEBUS_NAMESPACE`→
@@ -84,7 +79,7 @@ What is left needs the cluster, not more reading:
 
 ## Notes on specific choices
 
-- **Blob mount** (`platform/static-gateway.yaml`): `protocol: fuse2`, `AzureStorageAuthType: MSI` + `AzureStorageIdentityClientID`, and the mount options are the ones in Microsoft's AKS Blob CSI doc (2026-08-05). Read-only three times: `-o ro`, `csi.readOnly`, `volumeMount.readOnly`. Kernel attribute/entry/negative timeouts are 5 s and the file cache 5 s, so a republished artifact is stale for seconds, not minutes. blobfuse2's own attribute cache keeps its 120 s default: `--attr-cache-timeout` exists in blobfuse2 but is not in the CSI doc's option list, so it is left out (UNVERIFIED; add it if staleness matters).
+- **Blob mount** (`charts/artifacts-platform/templates/static-gateway.yaml`): `protocol: fuse2`, `AzureStorageAuthType: MSI` + `AzureStorageIdentityClientID`, and the mount options are the ones in Microsoft's AKS Blob CSI doc (2026-08-05). Read-only three times: `-o ro`, `csi.readOnly`, `volumeMount.readOnly`. Kernel attribute/entry/negative timeouts are 5 s and the file cache 5 s, so a republished artifact is stale for seconds, not minutes. blobfuse2's own attribute cache keeps its 120 s default: `--attr-cache-timeout` exists in blobfuse2 but is not in the CSI doc's option list, so it is left out (UNVERIFIED; add it if staleness matters).
 - **Gateway `intake` listener** is plain HTTP on 8080 inside the VNet; DESIGN §6.11 makes TLS on that hop optional in v1. The file header says how to add it.
 - **ResourceQuota** counts limits: 50 × (500m, 512Mi) = 25 CPU, 25Gi exactly.
 - **PSA**: artifacts-dynamic `restricted`; the other two `baseline` enforce + `restricted` warn, because the Istio-managed Gateway pod runs in artifacts-system and its securityContext is Istio's, not ours.
@@ -95,10 +90,10 @@ What is left needs the cluster, not more reading:
 | Item | Where | How to confirm |
 |---|---|---|
 | Azure Policy built-in parameter names (`allowedContainerImagesRegex`, `allowedCapabilities`, `requiredDropCapabilities`, `allowedHostPaths.paths`, initiative `namespaces`) | `policy/azure-policy-assign.sh` | `az policy definition show` on each; the script fails loudly on a wrong name |
-| Kubelet readiness probes reach pods under the default-deny NetworkPolicy (Cilium allows host traffic by default) and under the ztunnel ALLOW policy (probe traffic is not subject to policy) | `networkpolicy-dynamic.yaml`, `authz-mesh-root.yaml` | pods go Ready after apply; the canary stage shows it for static-gateway first |
-| Istio Gateway pods under PSA `baseline`; the `infrastructure.annotations` reach the LB Service | `namespaces.yaml`, `gateway.yaml` | `kubectl get svc -n artifacts-system` shows an internal IP |
-| Secrets Store CSI `objectType: secret` on a Key Vault certificate yields a PEM the provider splits into `tls.key`/`tls.crt` (per the AKS ingress TLS doc); import certificates with an exportable private key | `platform/secretproviderclass.yaml` | Secrets appear after step 3 |
-| `-o ro` and the v1-style blobfuse flags accepted on the fuse2 path (documented, not run); MSI auth with `allowSharedKeyAccess: false` | `platform/static-gateway.yaml` | pod Ready; `kubectl exec ... touch /srv/x` fails |
-| Gateway API exact-host precedence over the wildcard route in Istio | `routes-static.yaml`, `python-artifact/template.yaml` | Phase 2 positive test |
+| Kubelet readiness probes reach pods under the default-deny NetworkPolicy (Cilium allows host traffic by default) and under the ztunnel ALLOW policy (probe traffic is not subject to policy) | `charts/artifacts-platform/templates/networkpolicy-dynamic.yaml`, `authz-mesh-root.yaml` | pods go Ready after apply; the canary stage shows it for static-gateway first |
+| Istio Gateway pods under PSA `baseline`; the `infrastructure.annotations` reach the LB Service | `charts/artifacts-platform/templates/namespaces.yaml`, `gateway.yaml` | `kubectl get svc -n artifacts-system` shows an internal IP |
+| Secrets Store CSI `objectType: secret` on a Key Vault certificate yields a PEM the provider splits into `tls.key`/`tls.crt` (per the AKS ingress TLS doc); import certificates with an exportable private key | `charts/artifacts-platform/templates/secretproviderclass.yaml` | Secrets appear after step 3 |
+| `-o ro` and the v1-style blobfuse flags accepted on the fuse2 path (documented, not run); MSI auth with `allowSharedKeyAccess: false` | `charts/artifacts-platform/templates/static-gateway.yaml` | pod Ready; `kubectl exec ... touch /srv/x` fails |
+| Gateway API exact-host precedence over the wildcard route in Istio | `charts/artifacts-platform/templates/httproutes.yaml`, `python-artifact/template.yaml` | Phase 2 positive test |
 | Azure DevOps stage result strings used by the `always()` reporting job | `pipelines/artifact-python-deploy.yml` | decline one approval, read the callback |
 | ztunnel log text `policy rejection` and the metric label values in the audit procedure | this README | read one denied connection in the canary stage |

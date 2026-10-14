@@ -1,9 +1,7 @@
-# scanner-worker (agent-intake's code, DESIGN §3, §5). Queue consumer; no Service, no Kubernetes RBAC.
-# Identity: read intake, write serving + jobs, receive on the queue, Queue-builds on one Azure DevOps pipeline
-# (granted in Azure DevOps to this identity's service principal, integration item I8). No Key Vault access.
-# Environment variable names below are reconciled against scanner/README.md and intake-api/src/config.ts
-# (shared config module) at M2 (T50). HEALTH_PORT/GITLEAKS_BIN/PIPELINE_TIMEOUT_HOURS anticipate T17/T13,
-# landing in scanner/ at the same time as this reconciliation; see deploy/README.md's interface table.
+# scanner-worker (agent-intake's code, DESIGN §3, §5). Replaces deploy/platform/scanner-worker.yaml. Queue
+# consumer; no Service, no Kubernetes RBAC. Identity: read intake, write serving + jobs, receive on the
+# queue, Queue-builds on one Azure DevOps pipeline (granted in Azure DevOps to this identity's service
+# principal, integration item I8). No Key Vault access.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,7 +10,7 @@ metadata:
   labels:
     app.kubernetes.io/name: scanner-worker
 spec:
-  replicas: 2
+  replicas: {{ .Values.replicaCount.scannerWorker }}
   selector:
     matchLabels:
       app.kubernetes.io/name: scanner-worker
@@ -34,7 +32,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: scanner-worker
-          image: jfrog.corp.com/artifacts/scanner:<tag>
+          image: {{ .Values.images.scannerWorker | quote }}
           ports:
             - name: health
               containerPort: 8081
@@ -42,37 +40,37 @@ spec:
             - name: BACKEND
               value: azure
             - name: STORAGE_ACCOUNT_URL
-              value: "https://<storage-account>.blob.core.windows.net"
+              value: "https://{{ .Values.storage.accountName }}.blob.core.windows.net"
             - name: STORAGE_CONTAINER_INTAKE
-              value: intake
+              value: {{ .Values.storage.containers.intake | quote }}
             - name: STORAGE_CONTAINER_SERVING
-              value: serving
+              value: {{ .Values.storage.containers.serving | quote }}
             - name: STORAGE_CONTAINER_JOBS
-              value: jobs
+              value: {{ .Values.storage.containers.jobs | quote }}
             - name: SERVICEBUS_FQDN
-              value: "<servicebus-namespace>.servicebus.windows.net"
+              value: {{ .Values.serviceBus.fqdn | quote }}
             - name: SCAN_QUEUE
-              value: artifact-scan     # must equal intake-api's SCAN_QUEUE (same queue)
+              value: {{ .Values.serviceBus.scanQueue | quote }}   # must equal intake-api's SCAN_QUEUE (same queue)
             - name: SHELL_ORIGIN       # static tier's live url is ${SHELL_ORIGIN}/view/${artifactId}
-              value: https://artifacts.corp.com
+              value: "https://{{ .Values.domains.shell }}"
             - name: GITLEAKS_BIN       # baked into the scanner image (scanner/README.md SEC stage); SEC-000 warns if absent
-              value: /usr/local/bin/gitleaks
+              value: {{ .Values.scanner.gitleaksBin | quote }}
             - name: DEFENDER_TIMEOUT_SECONDS   # DESIGN §9: timeout routes to failed/human review, never allow
-              value: "60"
+              value: {{ .Values.scanner.defenderTimeoutSeconds | quote }}
             - name: PIPELINE_TIMEOUT_HOURS     # contracts/states.md: scanning -> failed with no /events callback (T13)
-              value: "24"
+              value: {{ .Values.scanner.pipelineTimeoutHours | quote }}
             - name: HEALTH_PORT         # T17: GET /healthz on this port, matches the probes below
-              value: "8081"
+              value: {{ .Values.scanner.healthPort | quote }}
             - name: INTAKE_INTERNAL_URL     # status writes go through intake-api's internal routes
               value: http://intake-api.artifacts-system.svc:8080
             - name: ADO_ORG
-              value: "<ado-org>"
+              value: {{ .Values.ado.org | quote }}
             - name: ADO_PROJECT
-              value: "<ado-project>"
+              value: {{ .Values.ado.project | quote }}
             - name: ADO_PIPELINE_ID         # numeric id of pipelines/artifact-python-deploy.yml once created
-              value: "<artifact-python-deploy-pipeline-id>"
+              value: {{ .Values.ado.pipelineId | quote }}
             - name: RUNTIME_MANIFEST        # baked into the scanner image from python-runtime's CI output
-              value: /etc/artifacts/runtime-manifest.python-1.json
+              value: {{ .Values.scanner.runtimeManifestPath | quote }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -1,7 +1,8 @@
-# Default deny for artifact pods, DESIGN §6.7 verbatim. Enforced by Azure CNI powered by Cilium.
-# Ingress: only the Istio Gateway pods in artifacts-system, port 8080. Egress: nothing. No DNS, no IMDS
-# (169.254.169.254), no cluster services, no internet. The egress wall is this policy, not Istio: ambient has
-# no client-side AuthorizationPolicy and artifacts-dynamic is not in the mesh anyway.
+# Default deny for artifact pods, DESIGN §6.7 verbatim. Replaces deploy/networkpolicy-dynamic.yaml.
+# Enforced by Azure CNI powered by Cilium. Ingress: only the Istio Gateway pods in artifacts-system, port
+# 8080. Egress: nothing. No DNS, no IMDS (169.254.169.254), no cluster services, no internet. The egress
+# wall is this policy, not Istio: ambient has no client-side AuthorizationPolicy and artifacts-dynamic is
+# not in the mesh anyway.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

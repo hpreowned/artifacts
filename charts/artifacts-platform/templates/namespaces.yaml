@@ -1,4 +1,4 @@
-# Namespaces for Publish-to-AKS (DESIGN §6.7, §6.8, D11). Apply first.
+# Namespaces for Publish-to-AKS (DESIGN §6.7, §6.8, D11). Replaces deploy/namespaces.yaml.
 #
 #   artifacts-system   in mesh; intake-api, scanner-worker, viewer-shell, the Istio Gateway, tls-sync
 #   artifacts-static   in mesh; static-gateway with the read-only Blob mount
@@ -40,7 +40,7 @@ metadata:
     pod-security.kubernetes.io/enforce-version: latest
     artifacts.corp.com/routes: allowed
 ---
-# 50 artifact pods at the §6.6 limits (500m / 512Mi) is exactly 25 CPU / 25Gi.
+# 50 artifact pods at the §6.6 limits (500m / 512Mi) is exactly 25 CPU / 25Gi by default.
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -48,10 +48,10 @@ metadata:
   namespace: artifacts-dynamic
 spec:
   hard:
-    pods: "50"
-    requests.cpu: "25"
-    requests.memory: 25Gi
-    limits.cpu: "25"
-    limits.memory: 25Gi
-    configmaps: "60"
-    services: "60"
+    pods: {{ .Values.resourceQuota.pods | quote }}
+    requests.cpu: {{ .Values.resourceQuota.requestsCpu | quote }}
+    requests.memory: {{ .Values.resourceQuota.requestsMemory | quote }}
+    limits.cpu: {{ .Values.resourceQuota.limitsCpu | quote }}
+    limits.memory: {{ .Values.resourceQuota.limitsMemory | quote }}
+    configmaps: {{ .Values.resourceQuota.configmaps | quote }}
+    services: {{ .Values.resourceQuota.services | quote }}

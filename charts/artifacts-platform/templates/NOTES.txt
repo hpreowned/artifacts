@@ -1,0 +1,24 @@
+artifacts-platform installed/upgraded ({{ .Release.Name }}, namespace is fixed by the templates: artifacts-system / artifacts-static / artifacts-dynamic — this chart does not honour --namespace or .Release.Namespace).
+
+Check rollout:
+  kubectl -n artifacts-system rollout status deploy/intake-api deploy/scanner-worker deploy/viewer-shell deploy/tls-sync
+  kubectl -n artifacts-static  rollout status deploy/static-gateway
+
+Check the Gateway got an internal IP, then point DNS at it (deploy/README.md apply order):
+  kubectl get gateway -n artifacts-system artifacts-internal
+
+Check the TLS secrets synced (tls-sync must be Ready first):
+  kubectl get secret -n artifacts-system artifacts-corp-com-tls wildcard-corp-artifacts-net-tls
+
+Mesh-root AuthorizationPolicy: only the stage-1 canary (artifacts-static) rendered this time
+{{- if .Values.authzMeshRoot.enableRootPolicy }}
+, AND the stage-2 root policy in istio-system (authzMeshRoot.enableRootPolicy=true) — confirm the canary
+ran clean before you flipped this on.
+{{- else }}
+. Flip authzMeshRoot.enableRootPolicy to true only after the canary has run clean for a few days (see
+templates/authz-mesh-root.yaml and deploy/README.md).
+{{- end }}
+
+Next: run the Azure Policy assignment (deploy/policy/azure-policy-assign.sh) and the node pool script
+(deploy/policy/nodepool-untrusted.sh) — those stay outside this chart; they are one-time cluster setup, not
+part of the application release.

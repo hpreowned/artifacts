@@ -1,24 +1,24 @@
-# static-gateway (agent-serve's code, DESIGN §6.4, D5). Serves serving/<id>/ from a read-only blobfuse2 mount.
+# static-gateway (agent-serve's code, DESIGN §6.4, D5). Replaces deploy/platform/static-gateway.yaml.
+# Serves serving/<id>/ from a read-only blobfuse2 mount.
 #
 # Blob CSI static provisioning, verified against learn.microsoft.com/azure/aks/create-volume-azure-blob-storage
 # (2026-08-05): protocol fuse2, AzureStorageAuthType MSI with AzureStorageIdentityClientID, mount options
 # passed through to blobfuse2. Read-only three times over: "-o ro" to blobfuse2, csi.readOnly on the PV, and
 # readOnly on the volumeMount. Short kernel attribute/entry timeouts (5 s) bound how long a republished
 # artifact serves stale content (DESIGN §9 "Blob CSI attribute cache").
-# <blobfuse-identity-client-id> is the identity whose object id is storage.bicep's staticGatewayPrincipalId
-# (Blob Data Reader on the serving container). blobfuse runs on the node, so this is the kubelet identity or a
-# user-assigned identity attached to the node pool's VMSS, not the pod's workload identity.
+# identities.blobfuse is the identity whose object id is storage.bicep's staticGatewayPrincipalId (Blob Data
+# Reader on the serving container). blobfuse runs on the node, so this is the kubelet identity or a
+# user-assigned identity attached to the node pool's VMSS, not the pod's workload identity (identities.staticGateway).
 #
-# Everything for namespace artifacts-static is in this one file: ServiceAccount, SecretProviderClass, PV/PVC,
-# Deployment, Service. Env var names reconciled against static-gateway/README.md at M2 (T50); GET /healthz on
-# the main port (PORT, below) is landing in static-gateway/ right now (T16) — the probes already target it.
+# Everything for namespace artifacts-static is in this one file: ServiceAccount, SecretProviderClass,
+# PV/PVC, Deployment, Service — mirrors the raw file's layout.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: static-gateway
   namespace: artifacts-static
   annotations:
-    azure.workload.identity/client-id: "<static-gateway-identity-client-id>"
+    azure.workload.identity/client-id: {{ .Values.identities.staticGateway.clientId | quote }}
 automountServiceAccountToken: false
 ---
 # static-gateway verifies the ?t= view token with the same HMAC key intake-api mints with (DESIGN §6.4).
@@ -38,9 +38,9 @@ spec:
   parameters:
     usePodIdentity: "false"
     useVMManagedIdentity: "false"
-    clientID: "<static-gateway-identity-client-id>"
-    keyvaultName: "<keyvault-name>"
-    tenantId: "<tenant-id>"
+    clientID: {{ .Values.identities.staticGateway.clientId | quote }}
+    keyvaultName: {{ .Values.keyVaultName | quote }}
+    tenantId: {{ .Values.tenantId | quote }}
     objects: |
       array:
         - |
@@ -55,7 +55,7 @@ metadata:
     pv.kubernetes.io/provisioned-by: blob.csi.azure.com
 spec:
   capacity:
-    storage: 100Gi            # not enforced by the driver; only matched against the PVC
+    storage: {{ .Values.staticGatewayBlob.pvCapacity | quote }}   # not enforced by the driver; only matched against the PVC
   accessModes:
     - ReadOnlyMany
   persistentVolumeReclaimPolicy: Retain
@@ -74,14 +74,14 @@ spec:
   csi:
     driver: blob.csi.azure.com
     readOnly: true
-    volumeHandle: "<storage-account>_serving"   # must be unique in the cluster; '#' and '/' are reserved
+    volumeHandle: "{{ .Values.storage.accountName }}_serving"   # must be unique in the cluster; '#' and '/' are reserved
     volumeAttributes:
       protocol: fuse2
-      resourceGroup: "<storage-resource-group>"
-      storageAccount: "<storage-account>"
-      containerName: serving
+      resourceGroup: {{ .Values.storage.resourceGroup | quote }}
+      storageAccount: {{ .Values.storage.accountName | quote }}
+      containerName: {{ .Values.storage.containers.serving | quote }}
       AzureStorageAuthType: MSI
-      AzureStorageIdentityClientID: "<blobfuse-identity-client-id>"
+      AzureStorageIdentityClientID: {{ .Values.identities.blobfuse.clientId | quote }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -95,7 +95,7 @@ spec:
   volumeName: artifacts-serving
   resources:
     requests:
-      storage: 100Gi
+      storage: {{ .Values.staticGatewayBlob.pvCapacity | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -105,7 +105,7 @@ metadata:
   labels:
     app.kubernetes.io/name: static-gateway
 spec:
-  replicas: 2
+  replicas: {{ .Values.replicaCount.staticGateway }}
   selector:
     matchLabels:
       app.kubernetes.io/name: static-gateway
@@ -127,7 +127,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: serving
-          image: jfrog.corp.com/artifacts/static-gateway:<tag>
+          image: {{ .Values.images.staticGateway | quote }}
           ports:
             - name: http
               containerPort: 8080
@@ -137,9 +137,9 @@ spec:
             - name: SERVE_ROOT          # <root>/<artifactId>/ per host (local dir on a laptop, the mount here)
               value: /srv
             - name: ARTIFACT_DOMAIN
-              value: corp-artifacts.net
+              value: {{ .Values.domains.artifacts | quote }}
             - name: SHELL_ORIGIN
-              value: https://artifacts.corp.com
+              value: "https://{{ .Values.domains.shell }}"
           envFrom:
             - secretRef:
                 name: static-gateway-secrets   # VIEW_TOKEN_KEY

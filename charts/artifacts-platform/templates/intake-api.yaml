@@ -1,5 +1,6 @@
-# intake-api (agent-intake's code, DESIGN §3). No Kubernetes RBAC, no secrets in the manifest.
-# Environment variable names below are reconciled against intake-api/README.md and src/config.ts at M2 (T50).
+# intake-api (agent-intake's code, DESIGN §3). Replaces deploy/platform/intake-api.yaml. No Kubernetes RBAC,
+# no secrets in the manifest. Environment variable names were reconciled against intake-api/README.md and
+# src/config.ts at M2 (T50); keep them in sync if that config module changes.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +9,7 @@ metadata:
   labels:
     app.kubernetes.io/name: intake-api
 spec:
-  replicas: 2
+  replicas: {{ .Values.replicaCount.intakeApi }}
   selector:
     matchLabels:
       app.kubernetes.io/name: intake-api
@@ -30,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: intake-api
-          image: jfrog.corp.com/artifacts/intake-api:<tag>
+          image: {{ .Values.images.intakeApi | quote }}
           ports:
             - name: http
               containerPort: 8080
@@ -40,25 +41,25 @@ spec:
             - name: BACKEND
               value: azure            # anything else selects the in-memory implementations (CLAUDE.md)
             - name: STORAGE_ACCOUNT_URL
-              value: "https://<storage-account>.blob.core.windows.net"
+              value: "https://{{ .Values.storage.accountName }}.blob.core.windows.net"
             - name: STORAGE_CONTAINER_INTAKE
-              value: intake
+              value: {{ .Values.storage.containers.intake | quote }}
             - name: STORAGE_CONTAINER_JOBS
-              value: jobs
+              value: {{ .Values.storage.containers.jobs | quote }}
             - name: STORAGE_CONTAINER_SERVING
-              value: serving
+              value: {{ .Values.storage.containers.serving | quote }}
             - name: SERVICEBUS_FQDN
-              value: "<servicebus-namespace>.servicebus.windows.net"
+              value: {{ .Values.serviceBus.fqdn | quote }}
             - name: SCAN_QUEUE
-              value: artifact-scan     # must equal scanner-worker's SCAN_QUEUE: same queue, enqueuer and consumer
+              value: {{ .Values.serviceBus.scanQueue | quote }}   # must equal scanner-worker's SCAN_QUEUE: same queue, enqueuer and consumer
             - name: SHELL_ORIGIN       # live artifact URL is ${SHELL_ORIGIN}/view/${artifactId}
-              value: https://artifacts.corp.com
+              value: "https://{{ .Values.domains.shell }}"
             - name: PUBLIC_BASE_URL    # what clients see through App Gateway + APIM; uploadUrl is built from it
-              value: https://mcp.corp.com/artifacts
+              value: {{ .Values.domains.publicBase | quote }}
             - name: ENTRA_TENANT_ID    # T18: beginPublish/getPublishStatus verify the caller's Entra bearer themselves
-              value: "<tenant-id>"
+              value: {{ .Values.tenantId | quote }}
             - name: ENTRA_AUDIENCE    # the artifacts-mcp app registration's client id (GUID), not its Application ID URI
-              value: "<artifacts-mcp-client-id>"
+              value: {{ .Values.entra.audience | quote }}
           envFrom:
             - secretRef:
                 name: intake-api-secrets   # VIEW_TOKEN_KEY, PIPELINE_TOKEN, INTERNAL_SHARED_KEY

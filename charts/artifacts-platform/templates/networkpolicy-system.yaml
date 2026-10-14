@@ -1,10 +1,10 @@
 # T18: intake-api no longer trusts X-Publisher-* headers from anything that can reach it, but who can reach
-# it still matters (DESIGN §9, "intake-api trusts X-Publisher-* headers..." row). Admits ingress to the
-# intake-api pods in artifacts-system only from: (a) the Istio Gateway pods (the APIM backend hop over the
-# VNet, DESIGN §6.11), (b) scanner-worker (status polling and its own callers), (c) viewer-shell (the
-# /view-token internal route). Style follows networkpolicy-dynamic.yaml. No egress rules here: intake-api's
-# own egress (Blob, Service Bus, Key Vault, login.microsoftonline.com for Entra token verification) is not
-# restricted by this policy.
+# it still matters (DESIGN §9, "intake-api trusts X-Publisher-* headers..." row). Replaces
+# deploy/networkpolicy-system.yaml. Admits ingress to the intake-api pods in artifacts-system only from:
+# (a) the Istio Gateway pods (the APIM backend hop over the VNet, DESIGN §6.11), (b) scanner-worker (status
+# polling and its own callers), (c) viewer-shell (the /view-token internal route). No egress rules here:
+# intake-api's own egress (Blob, Service Bus, Key Vault, login.microsoftonline.com for Entra token
+# verification) is not restricted by this policy.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

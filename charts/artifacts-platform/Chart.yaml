@@ -1,0 +1,13 @@
+apiVersion: v2
+name: artifacts-platform
+description: >-
+  Publish-to-AKS platform tier: the three namespaces, the internal Istio Gateway and its
+  HTTPRoutes, both NetworkPolicies, the mesh-root AuthorizationPolicy, workload-identity
+  ServiceAccounts, Key Vault SecretProviderClasses and TLS sync, and the four platform
+  Deployments/Services (intake-api, scanner-worker, static-gateway, viewer-shell). Replaces
+  the raw manifests formerly under deploy/namespaces.yaml, deploy/gateway.yaml,
+  deploy/routes-static.yaml, deploy/networkpolicy-*.yaml, deploy/authz-mesh-root.yaml and
+  deploy/platform/*.yaml (DESIGN.md §6.6-§6.8, §6.11; STATUS.md T71).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

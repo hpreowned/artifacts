@@ -1,0 +1,33 @@
+# T18: intake-api no longer trusts X-Publisher-* headers from anything that can reach it, but who can reach
+# it still matters (DESIGN §9, "intake-api trusts X-Publisher-* headers..." row). Admits ingress to the
+# intake-api pods in artifacts-system only from: (a) the Istio Gateway pods (the APIM backend hop over the
+# VNet, DESIGN §6.11), (b) scanner-worker (status polling and its own callers), (c) viewer-shell (the
+# /view-token internal route). Style follows networkpolicy-dynamic.yaml. No egress rules here: intake-api's
+# own egress (Blob, Service Bus, Key Vault, login.microsoftonline.com for Entra token verification) is not
+# restricted by this policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: intake-api-ingress
+  namespace: artifacts-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: intake-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: artifacts-internal
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: scanner-worker
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: viewer-shell
+      ports:
+        - port: 8080
+          protocol: TCP
+  # no egress rules on purpose

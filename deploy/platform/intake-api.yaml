@@ -55,6 +55,10 @@ spec:
               value: https://artifacts.corp.com
             - name: PUBLIC_BASE_URL    # what clients see through App Gateway + APIM; uploadUrl is built from it
               value: https://mcp.corp.com/artifacts
+            - name: ENTRA_TENANT_ID    # T18: beginPublish/getPublishStatus verify the caller's Entra bearer themselves
+              value: "<tenant-id>"
+            - name: ENTRA_AUDIENCE    # the artifacts-mcp app registration's client id (GUID), not its Application ID URI
+              value: "<artifacts-mcp-client-id>"
           envFrom:
             - secretRef:
                 name: intake-api-secrets   # VIEW_TOKEN_KEY, PIPELINE_TOKEN, INTERNAL_SHARED_KEY

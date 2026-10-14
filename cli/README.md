@@ -37,8 +37,8 @@ server's findings, or `IN-006` when the server sent none, and an empty `jobId`.
 | Variable | Required | Meaning |
 |---|---|---|
 | `ARTIFACTS_API_URL` | no | Base URL of the intake API. Default `http://localhost:8080`. Production: `https://mcp.corp.com/artifacts`. |
-| `ARTIFACTS_TOKEN` | yes, unless `ARTIFACTS_DEV_OID` is set | Bearer for `beginPublish` and `getPublishStatus`: an Entra access token with scope `artifacts.publish` in production; any value against the local stack. |
-| `ARTIFACTS_DEV_OID` | no | Local dev stack only. Sent as `X-Publisher-Oid: <oid>` and `X-Publisher-Upn: <oid>@dev`, the headers APIM would set from the Entra token. When set and `ARTIFACTS_TOKEN` is not, the token `dev` is sent. |
+| `ARTIFACTS_TOKEN` | yes, unless `ARTIFACTS_DEV_OID` is set | Bearer for `beginPublish` and `getPublishStatus`. Against a cluster (DEV_AUTH unset) this **must be a real Entra access token** for the `artifacts-mcp` audience — intake-api verifies it itself (T18), APIM no longer derives an identity from it on intake-api's behalf. Get one with `az account get-access-token --resource https://mcp.corp.com/artifacts-mcp/mcp --query accessToken -o tsv` (the Application ID URI; the `artifacts-mcp` app registration's `requestedAccessTokenVersion: 2` makes the resulting token's `aud` the client id, which is what intake-api checks — see `infra/entra/README.md`). Any value against the local dev stack (`DEV_AUTH=1`). |
+| `ARTIFACTS_DEV_OID` | no | **Dev-only.** Sent as `X-Publisher-Oid: <oid>` and `X-Publisher-Upn: <oid>@dev`. Only honoured by intake-api under `DEV_AUTH=1`; ignored entirely otherwise, even when present (T18). When set and `ARTIFACTS_TOKEN` is not, the token `dev` is sent. |
 | `ARTIFACTS_PREFLIGHT` | no | Path to `preflight.sh`. Default: `skill/publish-to-aks/scripts/preflight.sh` found by walking up from the built file, so a checkout works without configuration. |
 
 Upload and finalize use the one-time `uploadToken` from `beginPublish`, never `ARTIFACTS_TOKEN`. No token is

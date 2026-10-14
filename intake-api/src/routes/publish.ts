@@ -17,7 +17,7 @@ export function manifestFindings(manifest: unknown): Finding[] {
 
 /** POST /v1/publish → 201 PublishBegin. Invalid manifest → 400 { error, findings[IN-006] }. */
 export async function beginPublish(req: IncomingMessage, res: ServerResponse, deps: AppDeps): Promise<void> {
-  const who = publisher(req, deps.cfg);
+  const who = await publisher(req, deps.cfg, deps.entraVerifier);
   const body = await readJson(req);
   const findings = manifestFindings(body);
   if (findings.length > 0) fail(400, "manifest invalid", { findings });
@@ -53,7 +53,7 @@ export async function beginPublish(req: IncomingMessage, res: ServerResponse, de
 
 /** GET /v1/publish/{jobId} → 200 Status; 404 when unknown or owned by someone else. */
 export async function getPublishStatus(req: IncomingMessage, res: ServerResponse, deps: AppDeps, jobId: string): Promise<void> {
-  const who = publisher(req, deps.cfg);
+  const who = await publisher(req, deps.cfg, deps.entraVerifier);
   const job = await deps.stores.jobs.get(jobId);
   if (!job || job.ownerOid !== who.oid) fail(404, "unknown job");
   if (expireIfStale(job, deps.now())) await deps.stores.jobs.put(job);

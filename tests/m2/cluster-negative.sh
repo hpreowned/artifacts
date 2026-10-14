@@ -3,11 +3,16 @@
 #
 # Wraps tests/negative.sh for the AKS cluster (docs/M2-RUNBOOK.md step 27). Gets a real Entra access
 # token for the artifacts-mcp resource and decodes its oid/upn claims, so the test runs as a real
-# identity even though -- see "Known gap" in docs/M2-RUNBOOK.md -- intake-api does not itself validate
-# the token when this script talks to it directly: it only requires the X-Publisher-Oid/-Upn headers
-# to be present, which is what ARTIFACTS_DEV_OID makes artifactctl send. That header check is a stand-in
-# for APIM's validate-azure-ad-token policy, which is not in this script's path (M2 is internal-only;
-# APIM fronts this route only from M3 on).
+# identity. T18 resolved this script's former "Known gap" (docs/M2-RUNBOOK.md): intake-api now verifies
+# this token itself (intake-api/src/entra-token.ts) even though this script talks to it directly,
+# bypassing APIM's validate-azure-ad-token policy entirely (M2 is internal-only; APIM fronts this route
+# only from M3 on) -- so this is now a real, not simulated, auth check. The --resource value below is
+# the artifacts-mcp Application ID URI; its app registration's requestedAccessTokenVersion: 2 means the
+# token's aud claim is the client id regardless of which endpoint issued it, which is what intake-api's
+# ENTRA_AUDIENCE checks (DESIGN §6.10, infra/entra/README.md) -- no --scope/.default form is needed.
+# ARTIFACTS_DEV_OID (decoded below, for the audit trail only) is sent as X-Publisher-Oid/-Upn, which
+# intake-api no longer reads unless DEV_AUTH=1 (not set in deploy/platform/intake-api.yaml); ARTIFACTS_TOKEN
+# is what actually authenticates beginPublish/getPublishStatus now.
 #
 # Targets the in-cluster intake URL via a kubectl port-forward by default, or any URL already in
 # ARTIFACTS_API_URL / --api-url (e.g. the Gateway's internal "intake" listener, from inside the VNet:
@@ -90,7 +95,7 @@ print(data.get("oid", "unknown-oid"), data.get("upn") or data.get("preferred_use
 ' "$TOKEN")
 
 echo "token decoded: oid=$OID upn=$UPN" >&2
-echo "note: intake-api trusts X-Publisher-Oid/-Upn unconditionally when reached directly (docs/M2-RUNBOOK.md 'Known gap')" >&2
+echo "note: intake-api verifies this Entra token itself now (T18); X-Publisher-Oid/-Upn are sent for the audit trail only and are not read unless DEV_AUTH=1" >&2
 
 export ARTIFACTS_API_URL="$API_URL"
 export ARTIFACTS_TOKEN="$TOKEN"

@@ -29,6 +29,10 @@ export interface Config {
   devAuth: boolean;
   devPublisherOid: string;
   devPublisherUpn: string;
+  /** Required when devAuth is false; beginPublish/getPublishStatus verify the caller's Entra token against these. */
+  entraTenantId: string | undefined;
+  entraAudience: string | undefined;
+  entraRequiredScope: string | undefined;
   pipelineToken: string | undefined;
   internalSharedKey: string | undefined;
   viewTokenKey: Buffer;
@@ -49,6 +53,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (key.length < 32) throw new Error("VIEW_TOKEN_KEY must decode to at least 32 bytes");
   if (backend === "azure" && !env.STORAGE_ACCOUNT_URL) throw new Error("BACKEND=azure requires STORAGE_ACCOUNT_URL");
   if (backend === "azure" && !env.SERVICEBUS_FQDN) throw new Error("BACKEND=azure requires SERVICEBUS_FQDN");
+  const devAuth = env.DEV_AUTH === "1";
+  const entraTenantId = env.ENTRA_TENANT_ID || undefined;
+  const entraAudience = env.ENTRA_AUDIENCE || undefined;
+  // T18: without DEV_AUTH, beginPublish/getPublishStatus verify a real Entra bearer; both are required to do that.
+  if (!devAuth && (!entraTenantId || !entraAudience)) {
+    throw new Error("ENTRA_TENANT_ID and ENTRA_AUDIENCE are required when DEV_AUTH is unset (intake-api verifies the caller's Entra token itself)");
+  }
   const port = int(env.PORT, 8080);
   const pipelineTrigger = env.PIPELINE_TRIGGER === "ado" || (env.PIPELINE_TRIGGER === undefined && backend === "azure") ? "ado" : "fake";
   const ado = { org: env.ADO_ORG, project: env.ADO_PROJECT, pipelineId: env.ADO_PIPELINE_ID };
@@ -59,9 +70,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port,
     publicBaseUrl: (env.PUBLIC_BASE_URL ?? "http://localhost:8080").replace(/\/+$/, ""),
     shellOrigin: (env.SHELL_ORIGIN ?? "http://localhost:8082").replace(/\/+$/, ""),
-    devAuth: env.DEV_AUTH === "1",
+    devAuth,
     devPublisherOid: env.DEV_PUBLISHER_OID ?? "dev-oid",
     devPublisherUpn: env.DEV_PUBLISHER_UPN ?? "dev@localhost",
+    entraTenantId,
+    entraAudience,
+    // Unset → enforced with the default scope; "" → scope check disabled; anything else → that scope.
+    entraRequiredScope: env.ENTRA_REQUIRED_SCOPE === undefined ? "artifacts.publish" : env.ENTRA_REQUIRED_SCOPE || undefined,
     pipelineToken: env.PIPELINE_TOKEN || undefined,
     internalSharedKey: env.INTERNAL_SHARED_KEY || undefined,
     viewTokenKey: key,

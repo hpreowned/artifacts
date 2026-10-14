@@ -12,6 +12,7 @@ run time (D12). Every `<...>` is a placeholder. Validate offline with `./deploy/
 | `gateway.yaml` | Gateway `artifacts-internal`, internal LB, listeners `shell`, `content`, `intake` | artifacts-system |
 | `routes-static.yaml` | HTTPRoutes `viewer-shell`, `intake-api` (artifacts-system), `static-content` (artifacts-static) | both |
 | `networkpolicy-dynamic.yaml` | default deny both directions; ingress only from the Gateway pods on 8080 | artifacts-dynamic |
+| `networkpolicy-system.yaml` | ingress to intake-api only from the Gateway, scanner-worker and viewer-shell pods on 8080 (T18); no egress rules | artifacts-system |
 | `authz-mesh-root.yaml` | mesh-root ALLOW policy, staged (see below) | artifacts-static, then istio-system |
 | `platform/serviceaccounts.yaml`, `platform/secretproviderclass.yaml` | workload-identity ServiceAccounts; Key Vault → Secret mirrors incl. the two `kubernetes.io/tls` certs | artifacts-system |
 | `platform/tls-sync.yaml` | pause pod that keeps the TLS SecretProviderClass mounted so the Gateway's Secrets exist | artifacts-system |
@@ -33,8 +34,8 @@ from `jfrog.corp.com`.
 2. `kubectl apply -f namespaces.yaml`
 3. `kubectl apply -f platform/serviceaccounts.yaml -f platform/secretproviderclass.yaml -f platform/tls-sync.yaml`, then wait for Secrets `artifacts-corp-com-tls` and `wildcard-corp-artifacts-net-tls` in artifacts-system (`kubectl get secret -n artifacts-system`). If they never appear, the tls-sync pod's events say why (identity, Key Vault RBAC, certificate names).
 4. `kubectl apply -f gateway.yaml`; read the internal LB IP from `kubectl get gateway -n artifacts-system artifacts-internal`; create private DNS records `artifacts.corp.com`, `*.corp-artifacts.net`, `intake.artifacts.internal` → that IP. APIM's `backendUrl` is `http://intake.artifacts.internal:8080`.
-5. `kubectl apply -f routes-static.yaml -f networkpolicy-dynamic.yaml`
-6. `kubectl apply -f platform/` with image tags substituted (`pipelines/platform-deploy.yml` does this; by hand: `sed "s|:<tag>|:<build-id>|g"`).
+5. `kubectl apply -f routes-static.yaml -f networkpolicy-dynamic.yaml -f networkpolicy-system.yaml`
+6. `kubectl apply -f platform/` with image tags substituted (`pipelines/platform-deploy.yml` does this; by hand: `sed "s|:<tag>|:<build-id>|g"`). `platform/intake-api.yaml` needs `ENTRA_TENANT_ID` and `ENTRA_AUDIENCE` substituted too (T18; the artifacts-mcp app registration's client id, not its Application ID URI — `infra/entra/README.md`).
 7. `policy/azure-policy-assign.sh`; wait up to 20 minutes; run the DESIGN §8 Phase 2 negative tests 4 and 5.
 8. `kubectl apply -f authz-mesh-root.yaml` (stage 1 canary); stage 2 later, below.
 

@@ -574,13 +574,22 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
 | 18 | Gateway API exact-host precedence over the wildcard route | `deploy/README.md` | not provable until a python artifact exists (M5); irrelevant to M2's static-only gate |
 | 25 | APIM MCP server resource shape | `infra/README.md` | not on M2's path; fallback script and portal wizard documented if it matters later |
 
-## Known gap this runbook works around
+## Resolved by T18
 
-`intake-api` (per `intake-api/README.md`) trusts `X-Publisher-Oid`/`X-Publisher-Upn` **unconditionally**
-whenever they are present — it does not itself validate an Entra bearer token; that validation is APIM's job
-in production. Because M2's test path (steps 27, 28) talks to intake-api **directly** (port-forward or the
-Gateway's `intake` listener), bypassing APIM entirely, a real Entra access token obtained in step 27 is not
-actually checked by anything in that path — only the identity headers are. `tests/m2/cluster-negative.sh`
-still fetches a real token and decodes its `oid` claim (rather than inventing one) so the test's audit trail
-uses a real identity and the script needs no changes once APIM is in front of intake-api for real (M3). This
-is reported to the orchestrator as a design note, not fixed here (`intake-api/` is not this agent's directory).
+This runbook used to flag a gap here: `intake-api` trusted `X-Publisher-Oid`/`X-Publisher-Upn`
+**unconditionally** whenever present, so a real Entra access token obtained in step 27 was not actually
+checked by anything in that direct (non-APIM) test path — only the identity headers were, and anything on the
+VNet that could reach the `intake` listener could set them.
+
+T18 closed this with **no shared key**: `intake-api` now verifies the caller's Entra bearer itself
+(`intake-api/src/entra-token.ts` — RS256 against the tenant's JWKS, `iss`, `aud`, `exp`/`nbf`, `tid`, and the
+`scp` claim) and takes `oid`/`upn` from its own claims; `X-Publisher-*` headers are never read any more, even
+when present, unless `DEV_AUTH=1` (not set anywhere in `deploy/platform/intake-api.yaml`). `deploy/platform/
+intake-api.yaml` carries the new `ENTRA_TENANT_ID`/`ENTRA_AUDIENCE` env vars, and `deploy/networkpolicy-system.
+yaml` additionally restricts who can reach the `intake-api` pods at all (the Gateway, scanner-worker and
+viewer-shell pods only). So step 27's direct, non-APIM path now exercises the real thing: the token
+`tests/m2/cluster-negative.sh` fetches with `az account get-access-token --resource
+https://mcp.corp.com/artifacts-mcp/mcp` is the one intake-api actually verifies — its `--resource` value is
+already the right one, because the `artifacts-mcp` app registration's `requestedAccessTokenVersion: 2` makes
+Entra issue a v2-format token (`aud` = the client id) regardless of which endpoint requested it (DESIGN
+§6.10, `infra/entra/README.md`). No script change was needed; its comments were updated to say so.

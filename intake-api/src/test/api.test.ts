@@ -4,9 +4,11 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { after, before, test } from "node:test";
+import { createEntraTokenVerifier } from "../entra-token.js";
 import { REPO_ROOT } from "../repo-root.js";
 import { verify } from "../signed-token.js";
 import { PUBLISHER, STATIC_MANIFEST, call, declareLength, startApi, type Api } from "./api-helpers.js";
+import { AUDIENCE, baseClaims, FakeDiscoverySource, makeKey, signToken, TENANT_ID } from "./entra-fixture.js";
 
 let api: Api;
 before(async () => {
@@ -45,14 +47,41 @@ test("beginPublish: 201 PublishBegin shape; 400 with IN-006 findings for a bad m
   assert.equal(mismatch.status, 400, "schema allOf: python needs runtime and app.py");
   assert.equal((await call(api.base, "POST", "/v1/publish", { headers: PUBLISHER, body: Buffer.from("x") })).status, 400);
 
-  const strict = await startApi({ DEV_AUTH: "" });
+  // T18: without DEV_AUTH, X-Publisher-* headers are never read; only a verified Entra bearer identifies the caller.
+  const key = makeKey("kid-1");
+  const verifier = createEntraTokenVerifier({ tenantId: TENANT_ID, audience: AUDIENCE }, new FakeDiscoverySource([key]));
+  const strict = await startApi({ DEV_AUTH: "", ENTRA_TENANT_ID: TENANT_ID, ENTRA_AUDIENCE: AUDIENCE }, verifier);
   try {
-    assert.equal((await call(strict.base, "POST", "/v1/publish", { json: STATIC_MANIFEST })).status, 401);
-    assert.equal((await call(strict.base, "POST", "/v1/publish", { headers: { "x-publisher-oid": "o" }, json: STATIC_MANIFEST })).status, 401, "both headers required");
-    assert.equal((await call(strict.base, "POST", "/v1/publish", { headers: PUBLISHER, json: STATIC_MANIFEST })).status, 201);
+    assert.equal((await call(strict.base, "POST", "/v1/publish", { json: STATIC_MANIFEST })).status, 401, "no token at all");
+    assert.equal(
+      (await call(strict.base, "POST", "/v1/publish", { headers: PUBLISHER, json: STATIC_MANIFEST })).status,
+      401,
+      "X-Publisher-* headers alone are never enough, with or without DEV_AUTH",
+    );
+    const token = signToken(key, baseClaims(new Date(), { oid: "oid-real", preferred_username: "real@example.test" }));
+    // A forged X-Publisher-Oid sent alongside a valid bearer must not change the identity: headers are ignored
+    // even when present.
+    const begun = await call(strict.base, "POST", "/v1/publish", {
+      headers: { authorization: `Bearer ${token}`, "x-publisher-oid": "oid-mallory", "x-publisher-upn": "mallory@example.test" },
+      json: STATIC_MANIFEST,
+    });
+    assert.equal(begun.status, 201, begun.text);
+    const asTokenIdentity = await call(strict.base, "GET", `/v1/publish/${begun.body.jobId}`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(asTokenIdentity.status, 200, "owned by the token's oid, not the forged (and ignored) header");
+    const badSig = await call(strict.base, "POST", "/v1/publish", { headers: auth(signToken(key, baseClaims(new Date()), { badSignature: true })), json: STATIC_MANIFEST });
+    assert.equal(badSig.status, 401, "bad signature");
+    const wrongAud = await call(strict.base, "POST", "/v1/publish", { headers: auth(signToken(key, baseClaims(new Date(), { aud: "nope" }))), json: STATIC_MANIFEST });
+    assert.equal(wrongAud.status, 401, "wrong audience");
+    const expired = await call(strict.base, "POST", "/v1/publish", { headers: auth(signToken(key, baseClaims(new Date(), { exp: Math.floor(Date.now() / 1000) - 3600 }))), json: STATIC_MANIFEST });
+    assert.equal(expired.status, 401, "expired");
   } finally {
     await strict.stop();
   }
+});
+
+test("without DEV_AUTH, intake-api refuses to start when ENTRA_TENANT_ID or ENTRA_AUDIENCE is missing", async () => {
+  await assert.rejects(() => startApi({ DEV_AUTH: "", ENTRA_TENANT_ID: "", ENTRA_AUDIENCE: "" }), /ENTRA_TENANT_ID and ENTRA_AUDIENCE are required/);
+  await assert.rejects(() => startApi({ DEV_AUTH: "", ENTRA_TENANT_ID: TENANT_ID, ENTRA_AUDIENCE: "" }), /ENTRA_TENANT_ID and ENTRA_AUDIENCE are required/);
 });
 
 test("uploadBundle: 201 once; the token is single-use and job-bound; wrong token 401; unknown job 404; oversize 413", async () => {

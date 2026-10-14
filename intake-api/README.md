@@ -39,17 +39,31 @@ curl -s "localhost:8080/v1/publish/$JOB"     # → state live, url http://localh
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| POST | `/v1/publish` | caller identity headers | Validates the manifest against `contracts/manifest.schema.json` (400 with `IN-006` findings). 201 `PublishBegin`. |
+| POST | `/v1/publish` | Entra `Bearer` token (dev: identity headers) | Validates the manifest against `contracts/manifest.schema.json` (400 with `IN-006` findings). 201 `PublishBegin`. |
 | PUT | `/v1/publish/{jobId}/upload` | `Bearer <uploadToken>` | Body is the zip, at most `maxBytes` (25 MiB; 413 is answered before the body is buffered). 201. |
 | POST | `/v1/publish/{jobId}/finalize` | `Bearer <uploadToken>` | `{ sha256 }` must equal the stored zip's hash (409 otherwise). Sets `scanning`, enqueues `{ jobId }`. 202 `Status`. |
-| GET | `/v1/publish/{jobId}` | caller identity headers | 404 when unknown **or not owned by the caller's oid**. |
+| GET | `/v1/publish/{jobId}` | Entra `Bearer` token (dev: identity headers) | 404 when unknown **or not owned by the caller's oid**. |
 | POST | `/v1/publish/{jobId}/events` | `Bearer ${PIPELINE_TOKEN}` | Transitions per `contracts/states.md`; illegal → 409. Never through APIM. |
 | POST | `/v1/view-token` | `X-Internal-Caller: ${INTERNAL_SHARED_KEY}` | Token for a `live`, unexpired artifact; otherwise 404. Never through APIM. |
 | GET | `/healthz` | none | `{ ok: true }` |
 
-Caller identity is `X-Publisher-Oid` / `X-Publisher-Upn`, set by APIM after Entra validation. Without
-`DEV_AUTH=1` both headers are required (401 otherwise). With `DEV_AUTH=1` the headers are honoured when present
-and a fixed dev identity (`DEV_PUBLISHER_OID`/`DEV_PUBLISHER_UPN`) is used when absent; any bearer is accepted.
+**Caller identity (T18).** `beginPublish` and `getPublishStatus` are the only two operations that need the
+caller's identity (upload and finalize use the one-time `uploadToken` instead, see below). Without `DEV_AUTH=1`
+they require `Authorization: Bearer <Entra access token>` and verify it themselves — RS256 signature against
+the tenant's JWKS, `iss`, `aud` (`ENTRA_AUDIENCE`), `exp`/`nbf` with 60 s skew, `tid`, and optionally `scp`
+(`ENTRA_REQUIRED_SCOPE`) — then take `oid`/`upn` from the token's own claims (`src/entra-token.ts`). There is
+no shared key with APIM and nothing new in Key Vault: APIM stays the authorization point (Entra group
+membership via `validate-azure-ad-token`) and forwards the caller's bearer unchanged; intake-api checks it
+again on its own. `X-Publisher-Oid` / `X-Publisher-Upn` are never read in this mode, even when present —
+they are not trusted input, since anything on the VNet that can reach the `intake` listener could set them.
+Starting without `DEV_AUTH=1` and without both `ENTRA_TENANT_ID` and `ENTRA_AUDIENCE` set refuses to start.
+
+With `DEV_AUTH=1` (`npm run dev`, tests), today's behaviour is unchanged: `X-Publisher-Oid`/`X-Publisher-Upn`
+are honoured when present, a fixed dev identity (`DEV_PUBLISHER_OID`/`DEV_PUBLISHER_UPN`) is used when absent,
+and any bearer is accepted — a warning is logged on startup. Never set `DEV_AUTH=1` in production.
+
+intake-api needs egress to `login.microsoftonline.com` to fetch the tenant's OpenID discovery document and
+JWKS the first time it verifies a token, and again (at most once a minute) when an unrecognised `kid` arrives.
 
 **One-time upload token.** 256 random bits, returned once by `beginPublish`, stored only as a SHA-256 hash on
 the job. Valid 10 minutes, bound to its job, accepted once for `PUT /upload` and once more for `POST /finalize`,
@@ -91,6 +105,9 @@ The Azure implementations authenticate with `DefaultAzureCredential` (workload i
 | `SHELL_ORIGIN` | `http://localhost:8082` | Live artifact URL is `${SHELL_ORIGIN}/view/${artifactId}`. |
 | `DEV_AUTH` | unset | `1` trusts the identity headers as-is, substitutes a dev identity when absent, accepts any bearer. |
 | `DEV_PUBLISHER_OID` / `DEV_PUBLISHER_UPN` | `dev-oid` / `dev@localhost` | The dev identity used under `DEV_AUTH=1` when headers are absent. |
+| `ENTRA_TENANT_ID` | required unless `DEV_AUTH=1` | Tenant whose `v2.0/.well-known/openid-configuration` and JWKS verify the bearer; also checked against the token's `tid`. |
+| `ENTRA_AUDIENCE` | required unless `DEV_AUTH=1` | The `artifacts-mcp` app registration's **client id** (not its Application ID URI — v2 tokens carry `aud = <client id>`, DESIGN §6.10). Checked against the token's `aud`. |
+| `ENTRA_REQUIRED_SCOPE` | `artifacts.publish` | Checked against the token's space-separated `scp` claim. Set to an empty string to disable the check. |
 | `PIPELINE_TOKEN` | unset (→ `/events` answers 401) | Bearer the Azure DevOps pipeline presents on `/events`. From Key Vault in production. |
 | `INTERNAL_SHARED_KEY` | unset (→ `/view-token` answers 401) | `X-Internal-Caller` value the viewer shell presents. |
 | `VIEW_TOKEN_KEY` | random per process (warned) | Base64 of at least 32 key bytes for view-token HMACs. Must match the gateway and shell. |
@@ -116,8 +133,11 @@ The worker's variables (`GITLEAKS_BIN`, `PYTHON_BIN`, `RUNTIME_MANIFEST`, `DEFEN
 both the dev stack and the end-to-end test use. `src/server.ts` routes to `src/routes/{publish,upload,internal}.ts`.
 `src/manifest-validator.ts` is a deliberately small JSON Schema validator covering exactly the keywords
 `contracts/manifest.schema.json` uses; an unknown keyword throws at load so a contract change cannot pass
-unvalidated. Both packages compile with `rootDir: ".."` so each `dist/` carries the other package's sources it
-imports; that is why entrypoints live at `dist/intake-api/src/*.js`.
+unvalidated. `src/entra-token.ts` (T18) verifies Entra bearer tokens — discovery and JWKS fetch behind a
+`DiscoverySource` interface, the real one in the same file, a fake one in `src/test/entra-fixture.ts` — and
+`src/auth.ts` calls it from `beginPublish`/`getPublishStatus` when `DEV_AUTH` is unset. Both packages compile
+with `rootDir: ".."` so each `dist/` carries the other package's sources it imports; that is why entrypoints
+live at `dist/intake-api/src/*.js`.
 
 ## Container
 
@@ -159,8 +179,14 @@ schema file and the module layout resolve correctly. `docker build` itself is un
 ## Tests
 
 `src/test/api.test.ts` covers every operation and response code in the OpenAPI document, the single-use token,
-hash mismatch, ownership, the 10-minute window and every `/events` transition. `src/test/e2e.test.ts` runs the
-dev-stack composition over HTTP: `static-ok` → `live` with a mintable view token, `static-fetch` → `live` with
+hash mismatch, ownership, the 10-minute window and every `/events` transition, plus (T18) a strict-mode block
+with an in-test Entra token: no token → 401, headers alone → 401, a valid token with a forged `X-Publisher-Oid`
+alongside it → identity from the token, header ignored, and bad signature / wrong audience / expired → 401;
+a separate test asserts the server refuses to start without `ENTRA_TENANT_ID`/`ENTRA_AUDIENCE` when `DEV_AUTH`
+is unset. `src/test/entra-token.test.ts` unit-tests `entra-token.ts` directly against an in-test RSA key pair
+and a fake JWKS (`src/test/entra-fixture.ts`): every typed failure reason, the upn fallback chain, and the
+unknown-`kid` refresh capped at once a minute. `src/test/e2e.test.ts` runs the dev-stack composition over HTTP
+(always `DEV_AUTH=1`): `static-ok` → `live` with a mintable view token, `static-fetch` → `live` with
 `HTML-009`, `static-secret` → `rejected` with `SEC-001` (no gitleaks installed), `python-ok` → `awaiting_approval`
 through the fake pipeline's `/events` call, a forced `Malicious` Defender result → `MAL-001`.
 `src/test/signed-token.test.ts` pins the token format byte for byte.

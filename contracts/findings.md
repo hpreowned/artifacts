@@ -12,6 +12,7 @@ Every finding is `{ rule, severity, file?, line?, message }` (see intake-openapi
 | IN-006 | intake | deny | manifest missing or fails `manifest.schema.json` |
 | IN-007 | intake | deny | tier mismatch by content (`.py` in a static bundle; no `app.py` or any `.html` in a python bundle) |
 | IN-008 | intake | deny | entrypoint file missing |
+| IN-009 | intake | deny | upload is not a readable zip (bad signature, bad CRC, truncated) |
 | SEC-000 | secrets | warn | gitleaks binary unavailable; only the built-in regex pack ran. Must never appear in production, alert on it. |
 | SEC-001 | secrets | deny | gitleaks finding (rule id in message); the built-in regex pack also emits this id |
 | MAL-001 | malware | deny | Defender for Storage result `Malicious` |
@@ -30,6 +31,7 @@ Every finding is `{ rule, severity, file?, line?, message }` (see intake-openapi
 | PY-003 | python | deny | `open(` or `pathlib` write mode with a path outside `/tmp` |
 | PY-004 | python | deny | `requirements.txt`, `pyproject.toml`, `setup.py`, or any `.whl`/`.tar.gz` present |
 | PY-005 | python | warn | threading or asyncio use (allowed, but noted for the approver) |
+| PY-006 | python | deny | a .py file does not parse; imports cannot be verified |
 | LLM-001 | review | warn | reserved for the LLM intent review stage (not yet in scope) |
 
 Stage order: intake → secrets → malware (overlapping, see states.md) → html or python → verdict.

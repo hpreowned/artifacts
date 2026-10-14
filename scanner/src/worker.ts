@@ -81,7 +81,7 @@ async function scan(zip: Buffer, job: JobRecord, defender: Promise<DefenderResul
     ctx.extracted = await extractBundle(zip);
   } catch (err) {
     if (!(err instanceof ZipError)) throw err;
-    ctx.findings.push({ rule: "IN-001", severity: "deny", message: `the upload is not a readable zip archive: ${err.message}` });
+    ctx.findings.push({ rule: "IN-009", severity: "deny", message: `the upload is not a readable zip archive: ${err.message}` });
     return;
   }
   const { dir, files } = ctx.extracted;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 5 (python): PY-001, PY-002, PY-003, PY-005 with the standard-library ast module only.
+"""Stage 5 (python): PY-001, PY-002, PY-003, PY-005, PY-006 with the standard-library ast module only.
 
 Usage: imports.py <bundle-dir> <runtime-manifest.json>
 Prints a JSON array of {rule, file, line, message}. Bundle code is parsed, never imported or executed.
@@ -62,7 +62,7 @@ def check_file(bundle, rel, allowed):
         tree = ast.parse(source, filename=rel)
     except (SyntaxError, ValueError) as err:
         line = getattr(err, "lineno", 0) or 0
-        return [finding("PY-001", rel, line, "file cannot be parsed (%s); imports cannot be verified" % err.msg if hasattr(err, "msg") else str(err))]
+        return [finding("PY-006", rel, line, "file cannot be parsed (%s); imports cannot be verified" % err.msg if hasattr(err, "msg") else str(err))]
     visitor = Visitor(rel, allowed)
     visitor.visit(tree)
     return visitor.findings

@@ -35,6 +35,9 @@ done < <(find "$root/deploy" "$root/pipelines" "$root/infra" "$root/python-runti
 if [ -x "$root/deploy/python-artifact/test-render.sh" ]; then
   "$root/deploy/python-artifact/test-render.sh" || fail=1
 fi
+if [ -x "$root/python-runtime/test-emit-manifest.sh" ]; then
+  "$root/python-runtime/test-emit-manifest.sh" || fail=1
+fi
 
 [ "$fail" = 0 ] && echo "validate: all passed" || echo "validate: FAILURES"
 exit "$fail"

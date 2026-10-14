@@ -8,6 +8,44 @@
 # <blobfuse-identity-client-id> is the identity whose object id is storage.bicep's staticGatewayPrincipalId
 # (Blob Data Reader on the serving container). blobfuse runs on the node, so this is the kubelet identity or a
 # user-assigned identity attached to the node pool's VMSS, not the pod's workload identity.
+#
+# Everything for namespace artifacts-static is in this one file: ServiceAccount, SecretProviderClass, PV/PVC,
+# Deployment, Service.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: static-gateway
+  namespace: artifacts-static
+  annotations:
+    azure.workload.identity/client-id: "<static-gateway-identity-client-id>"
+automountServiceAccountToken: false
+---
+# static-gateway verifies the ?t= view token with the same HMAC key intake-api mints with (DESIGN §6.4).
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: static-gateway-secrets
+  namespace: artifacts-static
+spec:
+  provider: azure
+  secretObjects:
+    - secretName: static-gateway-secrets
+      type: Opaque
+      data:
+        - objectName: view-token-key
+          key: VIEW_TOKEN_KEY
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    clientID: "<static-gateway-identity-client-id>"
+    keyvaultName: "<keyvault-name>"
+    tenantId: "<tenant-id>"
+    objects: |
+      array:
+        - |
+          objectName: view-token-key
+          objectType: secret
+---
 apiVersion: v1
 kind: PersistentVolume
 metadata:

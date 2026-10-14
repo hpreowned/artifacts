@@ -36,8 +36,10 @@ esac
 
 expires_label="$(printf '%s' "$expires" | tr ':' '-')"
 
-# Scalars first, then app.py spliced in verbatim (indented 4) so its contents are never run through sed.
-sed -e "s|__ID__|$id|g" \
+# Comments dropped, scalars substituted, then app.py spliced in verbatim (indented 4) so its contents are
+# never run through sed.
+sed -e '/^#/d' \
+    -e "s|__ID__|$id|g" \
     -e "s|__EXPIRES_AT__|$expires_label|g" \
     -e "s|__IMAGE__|$image|g" \
     -e "s|__ARGS__|$args|g" \

@@ -1,7 +1,9 @@
 # scanner-worker (agent-intake's code, DESIGN §3, §5). Queue consumer; no Service, no Kubernetes RBAC.
 # Identity: read intake, write serving + jobs, receive on the queue, Queue-builds on one Azure DevOps pipeline
 # (granted in Azure DevOps to this identity's service principal, integration item I8). No Key Vault access.
-# Environment variable names are this directory's expectation of scanner/README.md; reconcile at M2.
+# Environment variable names below are reconciled against scanner/README.md and intake-api/src/config.ts
+# (shared config module) at M2 (T50). HEALTH_PORT/GITLEAKS_BIN/PIPELINE_TIMEOUT_HOURS anticipate T17/T13,
+# landing in scanner/ at the same time as this reconciliation; see deploy/README.md's interface table.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,35 +35,44 @@ spec:
       containers:
         - name: scanner-worker
           image: jfrog.corp.com/artifacts/scanner:<tag>
+          ports:
+            - name: health
+              containerPort: 8081
           env:
             - name: BACKEND
               value: azure
-            - name: STORAGE_ACCOUNT
-              value: "<storage-account>"
-            - name: INTAKE_CONTAINER
+            - name: STORAGE_ACCOUNT_URL
+              value: "https://<storage-account>.blob.core.windows.net"
+            - name: STORAGE_CONTAINER_INTAKE
               value: intake
-            - name: SERVING_CONTAINER
+            - name: STORAGE_CONTAINER_SERVING
               value: serving
-            - name: JOBS_CONTAINER
+            - name: STORAGE_CONTAINER_JOBS
               value: jobs
-            - name: SERVICEBUS_NAMESPACE
+            - name: SERVICEBUS_FQDN
               value: "<servicebus-namespace>.servicebus.windows.net"
             - name: SCAN_QUEUE
-              value: artifact-scan
-            - name: DEFENDER_WAIT_SECONDS   # DESIGN §9: timeout routes to human review, never allow
+              value: artifact-scan     # must equal intake-api's SCAN_QUEUE (same queue)
+            - name: SHELL_ORIGIN       # static tier's live url is ${SHELL_ORIGIN}/view/${artifactId}
+              value: https://artifacts.corp.com
+            - name: GITLEAKS_BIN       # baked into the scanner image (scanner/README.md SEC stage); SEC-000 warns if absent
+              value: /usr/local/bin/gitleaks
+            - name: DEFENDER_TIMEOUT_SECONDS   # DESIGN §9: timeout routes to failed/human review, never allow
               value: "60"
+            - name: PIPELINE_TIMEOUT_HOURS     # contracts/states.md: scanning -> failed with no /events callback (T13)
+              value: "24"
+            - name: HEALTH_PORT         # T17: GET /healthz on this port, matches the probes below
+              value: "8081"
             - name: INTAKE_INTERNAL_URL     # status writes go through intake-api's internal routes
               value: http://intake-api.artifacts-system.svc:8080
-            - name: ADO_ORG_URL
-              value: https://dev.azure.com/<ado-org>
+            - name: ADO_ORG
+              value: "<ado-org>"
             - name: ADO_PROJECT
               value: "<ado-project>"
             - name: ADO_PIPELINE_ID         # numeric id of pipelines/artifact-python-deploy.yml once created
               value: "<artifact-python-deploy-pipeline-id>"
-            - name: RUNTIME_MANIFEST_PATH   # baked into the scanner image from python-runtime's CI output
+            - name: RUNTIME_MANIFEST        # baked into the scanner image from python-runtime's CI output
               value: /etc/artifacts/runtime-manifest.python-1.json
-            - name: WORK_DIR
-              value: /tmp/work
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -78,13 +89,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8081           # tiny health endpoint; the worker exposes no API
+              port: health          # tiny health endpoint on HEALTH_PORT; the worker exposes no other API
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 8081
+              port: health
             periodSeconds: 30
           volumeMounts:
             - name: tmp

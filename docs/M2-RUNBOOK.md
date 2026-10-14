@@ -44,6 +44,25 @@ because the orchestrator asked for the full path in one document — not because
 | I7 | Defender for Storage enabled | **Yes.** Steps 7–8. The EICAR gate test (step 30) has nothing to alert on without it. |
 | I8 | Azure DevOps: VNet agent pool confirmed; Environment `artifacts-dynamic` approval; Queue-builds permission | **Partially.** The *agent pool* half blocks step 23 (`pipelines/platform-deploy.yml` runs on `<your-vnet-pool>` and needs to reach the private API server and Blob). The *Environment approval* and *Queue-builds* halves are M5-only (Python tier) and are not exercised here. |
 
+## Code-level blocker found while writing this runbook (not an integration item — tracked as T16/T17)
+
+**`static-gateway` and `scanner-worker` do not implement `GET /healthz` yet**, confirmed by reading
+`static-gateway/src/handler.ts` (host-to-artifact-id parsing runs first and 404s anything that is not
+`<12 alnum>.<ARTIFACT_DOMAIN>`, with no `/healthz` special case) and by `grep -rln healthz scanner/src/`
+returning nothing. `deploy/platform/static-gateway.yaml`'s readiness/liveness probes and
+`deploy/platform/scanner-worker.yaml`'s readiness/liveness probes both hit `/healthz` on these services.
+Until it exists, **`static-gateway`'s pods never go `Ready`**, its Service has no endpoints, and the
+`static-content` HTTPRoute has nothing to route to — step 23's verify command
+(`kubectl rollout status -n artifacts-static deploy/static-gateway`) will hang and time out, and M2's
+"real internal URL" criterion cannot be met at all, not just imperfectly.
+
+This is already tracked, separately from this runbook: `STATUS.md` T16 (agent-intake: "static-gateway/
+serves `GET /healthz` 200 before host parsing") and T17 (agent-scanner: "worker exposes `GET /healthz`
+on `HEALTH_PORT`"), both `todo` as of this writing, assigned the same day as this task. **Steps 23 and 26
+of this runbook are blocked on T16 and T17 landing** — confirmed by running the local dev stack and
+observing `static-gateway`'s `/healthz` return `404` (viewer-shell and intake-api both correctly return
+`200`). `tests/m2/smoke.sh`'s header carries the same note so it is not mistaken for a smoke-test bug.
+
 ---
 
 ## Phase 0 — assumed already true
@@ -451,7 +470,8 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
 - **If it fails:** a `static-gateway` pod stuck `Pending` or `CrashLoopBackOff` with a blobfuse mount error
   points back at step 12 (the blobfuse identity) or step 10 (certificate names do not apply here — that is
   the Gateway, not the mount — but the pattern of checking `kubectl describe pod` and `kubectl logs` applies
-  equally).
+  equally). If the pod is `Running` but never `Ready` (readiness probe failing, no crash), check T16/T17
+  first — see "Code-level blocker" above — before assuming anything in this runbook is wrong.
 
 ---
 

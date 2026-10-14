@@ -61,6 +61,10 @@ then dead. A job still `awaiting_upload` after 10 minutes becomes `expired` (on 
 base64-decoded, constant-time compare, rejected past `exp`. Payload
 `{"t":"view","aid":"<artifactId>","oid":"<viewerOid>","exp":<now+300>}`.
 
+`POST /v1/view-token` also returns `artifactExpiresAt`, the job record's `expiresAt` (the artifact's TTL, not
+the token's 5-minute `expiresAt`), so the shell can show "Expires &lt;date&gt;" in its banner.
+`contracts/intake-openapi.yaml`'s `createViewToken` response documents it as optional.
+
 ## Job record and stores
 
 `src/job.ts` is the record: `jobId` (`job_` + 20 lowercase alnum), `artifactId` (12 lowercase alnum, assigned

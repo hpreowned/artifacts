@@ -36,6 +36,7 @@ interface Status {
   jobId: string;
   state: string;
   url?: string;
+  expiresAt?: string;
   findings?: { rule: string; severity: string }[];
   approval?: { group: string; runUrl?: string };
   summary?: string;
@@ -76,6 +77,7 @@ test("static-ok reaches live with the shell URL, files in SERVE_ROOT, and a mint
   assert.equal(t.status, 200, t.text);
   const v = verify(t.body.token, secrets.view);
   assert.ok(v.ok && v.payload.aid === artifactId && v.payload.t === "view");
+  assert.equal(t.body.artifactExpiresAt, status.expiresAt, "view-token reports the artifact's TTL expiry, not the token's");
 });
 
 test("static-fetch is live with an HTML-009 info; static-secret is rejected with SEC-001 offline", async () => {

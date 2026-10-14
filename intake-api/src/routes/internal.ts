@@ -45,5 +45,5 @@ export async function createViewToken(req: IncomingMessage, res: ServerResponse,
   if (!job || job.state !== "live" || Date.parse(job.expiresAt) <= now.getTime()) fail(404, "artifact not live");
   const exp = Math.floor(now.getTime() / 1000) + VIEW_TOKEN_TTL_SECONDS;
   const token = sign({ t: "view", aid: job.artifactId, oid: body.viewerOid, exp }, deps.cfg.viewTokenKey);
-  sendJson(res, 200, { token, expiresAt: new Date(exp * 1000).toISOString() });
+  sendJson(res, 200, { token, expiresAt: new Date(exp * 1000).toISOString(), artifactExpiresAt: job.expiresAt });
 }

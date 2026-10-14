@@ -70,7 +70,7 @@ Multi-stage on `jfrog.corp.com/docker/node:20-slim` (placeholder registry path):
 
 ## Expiry in the banner
 
-`/v1/view-token`'s contract returns `{ token, expiresAt }` where `expiresAt` is the token's 5-minute expiry, not the artifact's TTL. The banner shows "Expires <date>" only when the response also carries an optional `artifactExpiresAt` (ISO date-time). The contract does not forbid extra fields; adding `artifactExpiresAt` to intake's response lights the banner up. Reported to the orchestrator as a contract suggestion.
+`/v1/view-token`'s contract (`contracts/intake-openapi.yaml`, T15) returns `{ token, expiresAt, artifactExpiresAt? }`: `expiresAt` is the token's 5-minute expiry, `artifactExpiresAt` (optional, ISO date-time) is the artifact's own TTL expiry, taken from intake-api's job record. The banner renders "Expires <date>" right after the "Never enter passwords or credentials here." sentence, as a plain `YYYY-MM-DD` date, and omits it entirely when intake-api does not send the field.
 
 ## Tests
 

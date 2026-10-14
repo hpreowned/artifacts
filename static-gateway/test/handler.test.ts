@@ -143,6 +143,34 @@ describe('static-gateway handler', () => {
   });
 });
 
+describe('GET /healthz', () => {
+  let s: TestServer;
+  before(async () => { s = await startGateway(); });
+  after(async () => { await s.close(); });
+
+  test('200 {"ok":true} with an arbitrary Host, with no Host at all, and before any security headers', async () => {
+    for (const host of ['nope.invalid', 'totally-unrelated.example:9999', '']) {
+      const r = await s.request({ path: '/healthz', host });
+      assert.equal(r.status, 200, host);
+      assert.equal(r.headers['content-type'], 'application/json; charset=utf-8', host);
+      assert.equal(r.body, JSON.stringify({ ok: true }), host);
+      assert.equal(r.headers['content-security-policy'], undefined, 'healthz is not artifact content; no CSP');
+    }
+  });
+
+  test('a valid, live artifact Host still gets the health body, not a file, on this exact path', async () => {
+    const r = await s.request({ path: '/healthz', headers: sessionCookie() }); // default host = ARTIFACT_ID.DOMAIN
+    assert.equal(r.status, 200);
+    assert.equal(r.body, JSON.stringify({ ok: true }));
+    assert.notEqual(r.body, '<!doctype html><h1>hello</h1>', 'did not fall through to index.html');
+  });
+
+  test('every other path keeps the existing host-parsing and header behaviour', async () => {
+    assert.equal((await s.request({ path: '/not-healthz', host: 'nope.invalid' })).status, 404);
+    assert.equal((await s.request({ path: '/', headers: sessionCookie() })).headers['content-security-policy'], EXPECTED_HEADERS['content-security-policy']);
+  });
+});
+
 describe('DEV_INSECURE_COOKIES=1', () => {
   let s: TestServer;
   before(async () => { s = await startGateway({ devInsecureCookies: true }); });

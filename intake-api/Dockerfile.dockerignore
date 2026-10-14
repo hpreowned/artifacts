@@ -1,0 +1,11 @@
+# Build context for intake-api/Dockerfile is the repo root (it needs sibling ../scanner/src and
+# ../contracts too), so a plain ".dockerignore" here would sit outside the context root and be
+# ignored. Docker/BuildKit looks for "<path-to-dockerfile>.dockerignore" in the context root instead
+# (see the Dockerfile reference, "multiple Dockerfiles"); naming it intake-api/Dockerfile.dockerignore
+# is how this directory ships one without touching anything outside intake-api/.
+**/node_modules
+**/dist
+**/*.md
+intake-api/src/test
+scanner/src/test
+.git

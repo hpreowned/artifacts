@@ -83,7 +83,11 @@ describe('viewer-shell with expiry and https', () => {
 
   test('shows "Expires <date>" when intake sends artifactExpiresAt; production CSP and iframe scheme', async () => {
     const r = await s.request({ path: `/view/${ARTIFACT_ID}` });
-    assert.ok(r.body.includes('Expires 2027-03-01 12:00:00 UTC'), r.body);
+    assert.ok(r.body.includes('Expires 2027-03-01'), r.body);
+    assert.ok(!r.body.includes('12:00:00'), 'plain YYYY-MM-DD, no time of day');
+    const banner = r.body.indexOf(BANNER_TEXT);
+    const expires = r.body.indexOf('Expires 2027-03-01');
+    assert.ok(banner > 0 && expires > banner, 'Expires <date> renders after the banner sentence');
     assert.ok(r.headers['content-security-policy']!.includes('frame-src https://*.corp-artifacts.net;'));
     assert.ok(r.body.includes(`<iframe src="https://${ARTIFACT_ID}.corp-artifacts.net/?t=${GRANT.token}"`));
   });

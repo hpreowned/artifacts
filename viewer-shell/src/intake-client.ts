@@ -1,4 +1,4 @@
-/** What intake-api's `POST /v1/view-token` returns (contracts/intake-openapi.yaml). `artifactExpiresAt` is optional and not in the contract yet. */
+/** What intake-api's `POST /v1/view-token` returns (contracts/intake-openapi.yaml). `artifactExpiresAt` is optional: the artifact's TTL expiry, present whenever intake-api's job record has one. */
 export interface ViewTokenGrant {
   token: string;
   expiresAt: string;

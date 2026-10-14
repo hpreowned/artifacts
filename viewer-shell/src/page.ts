@@ -45,7 +45,8 @@ export function renderMessagePage(title: string, message: string): string {
   );
 }
 
+/** Plain `YYYY-MM-DD`, the date portion of the ISO string (no time, no "UTC" suffix). */
 function formatDate(iso: string): string {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+  return Number.isNaN(d.getTime()) ? iso : d.toISOString().slice(0, 10);
 }

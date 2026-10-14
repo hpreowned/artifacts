@@ -134,6 +134,7 @@ paths:
                 properties:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
+                  artifactExpiresAt: { type: string, format: date-time, description: 'When the artifact itself expires (its TTL), for display' }
         '404': { description: Artifact not live }
 components:
   parameters:

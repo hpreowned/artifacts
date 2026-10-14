@@ -183,6 +183,7 @@ test("createViewToken: internal key required; 404 unless live; token verifies wi
   assert.equal(v.payload.oid, "viewer-7");
   assert.equal(v.payload.exp, Math.floor(api.clock.now.getTime() / 1000) + 300);
   assert.equal(Date.parse(r.body.expiresAt), v.payload.exp * 1000);
+  assert.equal(r.body.artifactExpiresAt, job.expiresAt, "artifactExpiresAt is the job's TTL expiry, not the token's");
   job.expiresAt = new Date(api.clock.now.getTime() - 1).toISOString();
   await api.stores.jobs.put(job);
   assert.equal((await call(api.base, "POST", "/v1/view-token", { headers, json: body })).status, 404, "past TTL is not live");

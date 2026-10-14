@@ -2,7 +2,13 @@
 
 Serves scanned static artifacts, one origin per artifact, from a read-only directory. Owner: `agent-serve`. Design: `DESIGN.md` §2a and §6.4.
 
-A request to `http(s)://<artifactId>.<ARTIFACT_DOMAIN>/<path>` is handled in this order:
+`GET /healthz` is handled before any of this and always answers `200 {"ok":true}` (`Content-Type:
+application/json`, no security headers, no `Host` parsing) — this is the kubelet readiness/liveness probe
+in `deploy/platform/static-gateway.yaml` (`path: /healthz`, `port: http` → container port 8080, matching
+this package's `PORT=8080` there), so it must work with any `Host` header or none, including a `Host` that
+would otherwise resolve to a real artifact. It never falls through to the file server, even for a live artifact.
+
+A request to `http(s)://<artifactId>.<ARTIFACT_DOMAIN>/<path>` (any other path) is handled in this order:
 
 1. The `Host` must be exactly `<12 lowercase alphanumerics>.<ARTIFACT_DOMAIN>`; anything else is `404`.
 2. `Sec-Fetch-Dest: document` (a top-level load) is `302` to `<SHELL_ORIGIN>/view/<artifactId>`. The raw origin only renders inside the shell's iframe.
@@ -82,7 +88,7 @@ Multi-stage on `jfrog.corp.com/docker/node:20-slim` (placeholder registry path).
 
 ## Tests
 
-`npm test` covers, with a temporary `SERVE_ROOT`: the token layout and every rejection path; host parsing; each handler rule including a token for the wrong artifact, expired tokens, a session token presented as a view token and vice versa; the exact header set on 200, both 302s, 403, both 404s and 405; cookie attributes in both modes; traversal, encoded traversal, symlink escape, unknown extensions, directories; `HEAD`.
+`npm test` covers, with a temporary `SERVE_ROOT`: the token layout and every rejection path; host parsing; each handler rule including a token for the wrong artifact, expired tokens, a session token presented as a view token and vice versa; the exact header set on 200, both 302s, 403, both 404s and 405; cookie attributes in both modes; traversal, encoded traversal, symlink escape, unknown extensions, directories; `HEAD`; `/healthz` returns `200 {"ok":true}` with an arbitrary `Host`, with no `Host`, and with a live artifact's own `Host` (never the file), and every other path's behaviour is unchanged (22 tests total).
 
 ## Not tested here
 

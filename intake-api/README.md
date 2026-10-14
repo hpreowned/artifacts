@@ -61,6 +61,10 @@ then dead. A job still `awaiting_upload` after 10 minutes becomes `expired` (on 
 base64-decoded, constant-time compare, rejected past `exp`. Payload
 `{"t":"view","aid":"<artifactId>","oid":"<viewerOid>","exp":<now+300>}`.
 
+`POST /v1/view-token` also returns `artifactExpiresAt`, the job record's `expiresAt` (the artifact's TTL, not
+the token's 5-minute `expiresAt`), so the shell can show "Expires &lt;date&gt;" in its banner.
+`contracts/intake-openapi.yaml`'s `createViewToken` response documents it as optional.
+
 ## Job record and stores
 
 `src/job.ts` is the record: `jobId` (`job_` + 20 lowercase alnum), `artifactId` (12 lowercase alnum, assigned
@@ -114,6 +118,43 @@ both the dev stack and the end-to-end test use. `src/server.ts` routes to `src/r
 `contracts/manifest.schema.json` uses; an unknown keyword throws at load so a contract change cannot pass
 unvalidated. Both packages compile with `rootDir: ".."` so each `dist/` carries the other package's sources it
 imports; that is why entrypoints live at `dist/intake-api/src/*.js`.
+
+## Container
+
+```sh
+docker build -f intake-api/Dockerfile -t intake-api:dev .   # from the REPO ROOT, not this directory
+docker run --rm -p 8080:8080 --read-only \
+  -e BACKEND=azure -e STORAGE_ACCOUNT_URL=https://<account>.blob.core.windows.net \
+  -e SERVICEBUS_FQDN=<namespace>.servicebus.windows.net \
+  -e PIPELINE_TRIGGER=fake \
+  -e PUBLIC_BASE_URL=https://mcp.corp.com/artifacts -e SHELL_ORIGIN=https://artifacts.corp.com \
+  -e VIEW_TOKEN_KEY="$VIEW_TOKEN_KEY" -e PIPELINE_TOKEN="$PIPELINE_TOKEN" -e INTERNAL_SHARED_KEY="$INTERNAL_SHARED_KEY" \
+  intake-api:dev
+```
+
+Multi-stage on `jfrog.corp.com/docker/node:20-slim` (placeholder registry path), mirroring `../viewer-shell/Dockerfile`'s
+shape. The build context is the **repo root**, not `intake-api/`: `tsconfig.json`'s `include` pulls in
+`../scanner/src` (imported by `src/stack.ts`, the combined dev-stack composition), so the build stage runs
+`npm ci` in both `intake-api/` and `scanner/` and type-checks both; nothing from `scanner/` is copied into the
+final image. The final stage also gets `contracts/manifest.schema.json` (`src/manifest-validator.ts` reads it)
+and `ENV REPO_ROOT=/app`, since `src/repo-root.ts`'s own path-climbing default assumes the uncontained repo
+layout. Because the build context isn't this directory, the ignore file is `Dockerfile.dockerignore` here
+(Docker's convention for a non-default context: see that file's header) rather than a plain `.dockerignore`.
+
+The final stage runs as `USER 65532:65532`, `CMD` is exec form, and no code path in this package ever writes
+to disk at run time: `src/stores/select.ts`'s `LocalServingStore` (the only thing in this package that touches
+the filesystem) is constructed but never called by `src/main.ts`'s routes — publishing files is the scanner
+worker's job, in its own container. So the image runs with `readOnlyRootFilesystem: true` and no writable
+volumes. `BACKEND=azure` also pulls in the worker's config validation (shared `src/config.ts`), which defaults
+`PIPELINE_TRIGGER` to `ado` and then requires `ADO_ORG`/`ADO_PROJECT`/`ADO_PIPELINE_ID`; pass `PIPELINE_TRIGGER=fake`
+if those aren't set, even though this image's own entrypoint never triggers a pipeline.
+
+Not executed here: no Docker daemon on the authoring machine. The two build-stage `npm ci` steps, the `tsc`
+build, `npm prune --omit=dev`, and the assembled final-stage layout (package.json, pruned node_modules,
+`dist/intake-api/src`, `contracts/manifest.schema.json`, `REPO_ROOT=/app`) were verified by hand: reproducing
+each `COPY` outside Docker, then running `node dist/intake-api/src/main.js` against that tree answered
+`GET /healthz` with `{"ok":true}` and `POST /v1/publish` with a schema-validated `400`/`IN-006`, proving the
+schema file and the module layout resolve correctly. `docker build` itself is unverified.
 
 ## Tests
 

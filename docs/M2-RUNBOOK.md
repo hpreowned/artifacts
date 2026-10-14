@@ -24,24 +24,25 @@ command for each step. Every `<placeholder>` matches the name used in the script
 
 ## What is NOT on M2's path
 
-Steps 27–29 (APIM import, MCP server, App Gateway + public DNS for `mcp.corp.com`, the custom connector) are
-required for **M3** (the Cowork connector path), not M2. M2's gate only needs the static tier reachable
-**inside** the VNet — the test scripts in `tests/m2/` talk to intake-api directly (port-forward or the
-Gateway's `intake` listener), never through APIM. They are listed here in dependency order because
-`infra/entra/create.sh` creates all three Entra apps (including the one M2 *does* need) in one pass, and
-because the orchestrator asked for the full path in one document — not because M2 is blocked on them.
+Step 25 (APIM import, MCP server, App Gateway route + public DNS for `mcp.corp.com`) is required for
+**M3** (the Cowork connector path), not M2; the custom connector itself (I5) is M4 and is not covered by
+this runbook at all. M2's gate only needs the static tier reachable **inside** the VNet — the test
+scripts in `tests/m2/` talk to intake-api directly (port-forward or the Gateway's `intake` listener),
+never through APIM. Step 25 is listed here in dependency order because the orchestrator asked for the
+full path in one document, and because steps 1–3 (Entra) create everything step 25 needs as a side
+effect — not because M2 is blocked on it.
 
 ## Integration items this runbook exercises
 
 | ID | Item | Blocks M2? |
 |---|---|---|
 | I1 | Two Entra app registrations (`artifacts-mcp`, `claude-connector`) | No — but the *same script* (step 2) also creates `artifacts-viewer-shell`, which M2's real sign-in needs. Run step 2 fully; only the shell app's output matters for M2. |
-| I2 | APIM: import API, MCP server, PRM, policy | No — M3 only (step 27) |
-| I3 | App Gateway route + public DNS for `mcp.corp.com` | No — M3 only (step 27). M2 uses the **internal** DNS records created in step 25, which this runbook creates directly. |
+| I2 | APIM: import API, MCP server, PRM, policy | No — M3 only (step 25) |
+| I3 | App Gateway route + public DNS for `mcp.corp.com` | No — M3 only (step 25). M2 uses the **internal** DNS records created in step 24, which this runbook creates directly. |
 | I4 | Cowork egress allowlist | No — M3 only, not covered here |
 | I5 | Custom connector | No — M4 only, not covered here |
 | I6 | Skill published | No — M3 only, not covered here |
-| I7 | Defender for Storage enabled | **Yes.** Steps 7–8. The EICAR gate test (step 30) has nothing to alert on without it. |
+| I7 | Defender for Storage enabled | **Yes.** Steps 7–8. The EICAR gate test (step 28) has nothing to alert on without it. |
 | I8 | Azure DevOps: VNet agent pool confirmed; Environment `artifacts-dynamic` approval; Queue-builds permission | **Partially.** The *agent pool* half blocks step 23 (`pipelines/platform-deploy.yml` runs on `<your-vnet-pool>` and needs to reach the private API server and Blob). The *Environment approval* and *Queue-builds* halves are M5-only (Python tier) and are not exercised here. |
 
 ## Code-level blocker found while writing this runbook (not an integration item — tracked as T16/T17)
@@ -109,7 +110,8 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
   still creates all three apps (M2 needs `artifacts-viewer-shell`; `artifacts-mcp`/`claude-connector` sit
   unused until M3). Idempotent — safe to re-run.
 - **Verify:** the script's own summary block prints the three app ids; keep `Viewer shell client id` for
-  step 10/23.
+  step 9 (pushing its secret) and step 22 (substituting it into `deploy/platform/viewer-shell.yaml`'s
+  `AZURE_CLIENT_ID`).
 - **If it fails:** `AADSTS9010010`-class failures only affect the `artifacts-mcp` resource/connector pair
   (M3), not M2. A failure creating `artifacts-viewer-shell` is almost always a missing Application
   Administrator role for the identity admin, or the `az` CLI version being older than 2.60 (the script needs
@@ -120,7 +122,8 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
 - **Who:** identity admin
 - **Action:** `MCP_URL=https://mcp.corp.com/artifacts-mcp/mcp SHELL_ORIGIN=https://artifacts.corp.com ./infra/entra/verify.sh`
 - **Verify:** script prints `All checks passed.` and exits 0. The tail of its output is the values table —
-  copy `AZURE_TENANT_ID` and the shell app id (`AZURE_CLIENT_ID`) into the notes you carry into step 23.
+  copy `AZURE_TENANT_ID` and the shell app id (`AZURE_CLIENT_ID`) into the notes you carry into step 22,
+  where they replace the placeholders of the same name in `deploy/platform/viewer-shell.yaml`.
 - **If it fails:** the script explains each `FAIL` line by name (see `infra/entra/README.md` "Values that must
   match"). For M2 the only row that matters is `web redirect ${SHELL_ORIGIN}/auth/callback` on
   `artifacts-viewer-shell`; everything above it concerns the MCP resource/connector pair (M3).
@@ -141,7 +144,9 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
   done
   ```
   Decide now which identity blobfuse will use for the `static-gateway` mount — either the cluster's existing
-  kubelet identity, or a fifth identity attached to the `untrusted`-adjacent node pool's VMSS (see step 13).
+  kubelet identity, or a fifth identity attached to the VMSS of whichever node pool `static-gateway`'s pods
+  actually land on (its Deployment has no `nodeSelector`, so this is a default/system pool, **not** the
+  `untrusted` pool from step 13 — that one is tainted against everything except Python artifact pods).
   `infra/README.md` calls this "not created here because it belongs to the cluster's resource group and
   lifecycle" — there is no script for it in this repo.
 - **Verify:** `az identity list -g <rg> --query "[].{name:name, clientId:clientId, principalId:principalId}" -o table`
@@ -192,7 +197,7 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
 - **Verify:** the plan is `Standard` with on-upload malware scanning enabled for this account, and the
   `serving/` prefix exclusion is present (`az resource show --ids <storage-account-id>/providers/Microsoft.Security/defenderForStorageSettings/current --query properties.malwareScanning`).
 - **If it fails:** this is I7's open item — if the plan shows `Free` or scanning disabled, re-run step 5's
-  deployment or enable it directly in the portal; without it the EICAR gate test (step 30) has no scanner to
+  deployment or enable it directly in the portal; without it the EICAR gate test (step 28) has no scanner to
   trigger and will hang at `MAL-002` after the 60-second timeout instead of `MAL-001`.
 
 ---
@@ -295,7 +300,7 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
   `AzureStorageIdentityClientID` and the `static-gateway-identity-client-id` placeholder in
   `secretproviderclass.yaml`.
 - **If it fails:** this step is genuinely unverified — `infra/README.md` says only "Created by whoever owns
-  the cluster," with no script. If blobfuse mount fails in step 23/24 with an auth error, the identity
+  the cluster," with no script. If blobfuse mount fails in step 23 with an auth error, the identity
   attached here (or the kubelet identity, if you chose that path) is the first thing to re-check; it needs
   **Storage Blob Data Reader** on the `serving` container (granted by `storage.bicep`'s
   `staticGatewayPrincipalId` parameter in step 5 — go back and re-run step 5 if you only decided on this
@@ -367,11 +372,12 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
 - **If it fails:** `deploy/README.md` says plainly: "If they never appear, the tls-sync pod's events say why
   (identity, Key Vault RBAC, certificate names)." Run `kubectl describe pod -n artifacts-system -l app.kubernetes.io/name=tls-sync`
   and check the three usual causes in order: wrong `clientID` (step 11's federation), missing Key Vault RBAC
-  (step 8's `secretReaderPrincipalIds`/step 5), or a certificate name typo (step 10).
+  (step 5's `secretReaderPrincipalIds` parameter), or a certificate name typo (step 10).
 
-### 17. Apply the Gateway; create internal DNS
-- **Who:** platform engineer (Gateway) + network team (DNS, see step 25 — pulled forward here because the IP
-  is needed immediately)
+### 17. Apply the Gateway; read its internal LB IP
+- **Who:** platform engineer. (DNS itself is step 24, by the network team — this step only produces the IP
+  that step 24 needs; they are not combined because the Gateway can be applied well before the network
+  team is ready to act.)
 - **Action:** `kubectl apply -f deploy/gateway.yaml`
 - **Verify:**
   ```
@@ -379,7 +385,7 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
   kubectl get svc -n artifacts-system -l gateway.networking.k8s.io/gateway-name=artifacts-internal
   ```
   Read the internal LB's `EXTERNAL-IP` (an internal address, because of the
-  `service.beta.kubernetes.io/azure-load-balancer-internal: "true"` annotation). Carry this IP into step 25.
+  `service.beta.kubernetes.io/azure-load-balancer-internal: "true"` annotation). Carry this IP into step 24.
 - **If it fails:** if the Gateway never gets `Programmed: True`, re-check that both TLS Secrets from step 16
   exist (a Gateway with a missing `certificateRefs` Secret stays un-programmed, not errored) — this is a
   common ordering mistake if step 16 was skipped or only partially applied. **UNVERIFIED** (`deploy/README.md`):
@@ -427,7 +433,7 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
 - **Who:** DevOps admin
 - **Action:** in Azure DevOps → Pipelines → Library → variable group `artifacts-platform`, set:
   - `STORAGE_ACCOUNT` = `<storage-account>` from step 5
-  - `INTAKE_EVENTS_URL` = `http://intake.artifacts.internal:8080/v1/publish` (resolves once step 25's DNS
+  - `INTAKE_EVENTS_URL` = `http://intake.artifacts.internal:8080/v1/publish` (resolves once step 24's DNS
     record exists; harmless to set now)
   - `PIPELINE_TOKEN` = link this one to the Key Vault secret `pipeline-token` (step 8), not a literal value
   - `PYTHON_RUNTIME_IMAGE` = leave as a placeholder digest for now; `pipelines/platform-deploy.yml`'s `runtime`
@@ -526,7 +532,7 @@ lists them as cluster prerequisites, and `infra/README.md`'s step 2 is the first
 - **Action:** `./tests/m2/smoke.sh` (see that script's header for every env var; defaults assume
   `kubectl` is pointed at the right cluster and namespace names match this runbook). It health-checks all four
   services, publishes `tests/corpus/static-ok`, and walks the gateway's token→cookie→CSP-header handshake
-  without a browser (the full browser walk, including real Entra sign-in, is step 31 /
+  without a browser (the full browser walk, including real Entra sign-in, is step 29 /
   `tests/m2/browser-checklist.md`).
 - **Verify:** script prints `SMOKE: PASS` and exits 0.
 - **If it fails:** the script's own output names which of the four `/healthz` checks, the publish, the

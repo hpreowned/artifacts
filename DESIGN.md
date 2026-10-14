@@ -642,6 +642,7 @@ Per-artifact CSP script hashes; per-user quotas; audit log of who published and 
 | Microsoft-hosted agent on the pipeline | Deploy stage cannot reach the private API server or Blob | Pin the pipeline to your VNet pool |
 | Approval check timeout left at the default | Stale runs sit for 30 days | Set the Environment check timeout to 7 days; the callback marks the job `expired` |
 | Pipeline queue latency | A Python publish takes 2 to 3 minutes to reach `awaiting_approval` | Expected; the human wait dominates. Static artifacts are unaffected |
+| intake-api trusts `X-Publisher-*` headers from anything that reaches it | A caller inside the VNet that can reach the Gateway's `intake` listener publishes as any user by setting two headers | APIM is the only intended caller. Until mTLS between APIM and the Gateway exists, APIM adds `X-Gateway-Key: {{gateway-shared-key}}` and intake-api rejects public routes without it (T18); NetworkPolicy on `artifacts-system` admits intake traffic only from the Gateway pods (found by the runbook agent, 2026-10-14) |
 | TTL deletes a demo mid-meeting | "The link died" | TTL is explicit in the manifest and in the `live` response; add `artifactctl extend` |
 | Phishing page passes every scan | A colleague types a password into it | Password inputs are rejected; forms cannot post anywhere; the shell shows a persistent "AI-generated artifact, never enter credentials" banner above the frame |
 

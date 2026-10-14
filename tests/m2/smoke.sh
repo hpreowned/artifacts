@@ -9,9 +9,7 @@
 # including the real sign-in and the frame-src/connect-src browser checks, is
 # tests/m2/browser-checklist.md (docs/M2-RUNBOOK.md step 29).
 #
-# NOTE: static-gateway and scanner-worker do not yet implement GET /healthz (STATUS.md T16, T17, both
-# "todo" as of this writing). Their health checks below will fail until those land; that is a known,
-# tracked gap, not a bug in this script.
+# All four services implement GET /healthz (static-gateway on its main port, scanner-worker on HEALTH_PORT 8081).
 #
 # Usage:
 #   tests/m2/smoke.sh

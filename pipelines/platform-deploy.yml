@@ -129,3 +129,11 @@ stages:
                     namespace: artifacts-system
                     command: rollout
                     arguments: status deploy/intake-api deploy/scanner-worker deploy/viewer-shell --timeout=180s
+                - task: Kubernetes@1
+                  displayName: rollout status (artifacts-static)
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    namespace: artifacts-static
+                    command: rollout
+                    arguments: status deploy/static-gateway --timeout=180s

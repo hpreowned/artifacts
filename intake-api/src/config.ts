@@ -1,10 +1,26 @@
-// Every environment variable the API and the dev stack read. Documented in README.md.
+// Every environment variable the API, the worker and the dev stack read. Documented in README.md.
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
+import { REPO_ROOT } from "./repo-root.js";
 
 export const MAX_BYTES = 25 * 1024 * 1024; // 25 MiB, contracts/findings.md IN-001 and PublishBegin.maxBytes
 export const UPLOAD_TTL_SECONDS = 600; // one-time upload token lifetime
 export const VIEW_TOKEN_TTL_SECONDS = 300;
+
+export interface WorkerConfig {
+  gitleaksBin: string;
+  pythonBin: string;
+  importsScript: string;
+  runtimeManifestPath: string;
+  defenderTimeoutSeconds: number;
+  defenderPollSeconds: number;
+  defenderFakeMalicious: Set<string>;
+  gcIntervalSeconds: number;
+  pipelineTrigger: "fake" | "ado";
+  ado: { org: string | undefined; project: string | undefined; pipelineId: string | undefined };
+  /** Where the fake pipeline posts its awaiting_approval callback. */
+  intakeInternalUrl: string;
+}
 
 export interface Config {
   port: number;
@@ -24,6 +40,7 @@ export interface Config {
   containers: { jobs: string; intake: string; serving: string };
   serviceBusFqdn: string | undefined;
   scanQueue: string;
+  worker: WorkerConfig;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -32,8 +49,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (key.length < 32) throw new Error("VIEW_TOKEN_KEY must decode to at least 32 bytes");
   if (backend === "azure" && !env.STORAGE_ACCOUNT_URL) throw new Error("BACKEND=azure requires STORAGE_ACCOUNT_URL");
   if (backend === "azure" && !env.SERVICEBUS_FQDN) throw new Error("BACKEND=azure requires SERVICEBUS_FQDN");
+  const port = int(env.PORT, 8080);
+  const pipelineTrigger = env.PIPELINE_TRIGGER === "ado" || (env.PIPELINE_TRIGGER === undefined && backend === "azure") ? "ado" : "fake";
+  const ado = { org: env.ADO_ORG, project: env.ADO_PROJECT, pipelineId: env.ADO_PIPELINE_ID };
+  if (pipelineTrigger === "ado" && (!ado.org || !ado.project || !ado.pipelineId)) {
+    throw new Error("PIPELINE_TRIGGER=ado requires ADO_ORG, ADO_PROJECT and ADO_PIPELINE_ID");
+  }
   return {
-    port: int(env.PORT, 8080),
+    port,
     publicBaseUrl: (env.PUBLIC_BASE_URL ?? "http://localhost:8080").replace(/\/+$/, ""),
     shellOrigin: (env.SHELL_ORIGIN ?? "http://localhost:8082").replace(/\/+$/, ""),
     devAuth: env.DEV_AUTH === "1",
@@ -54,6 +77,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     serviceBusFqdn: env.SERVICEBUS_FQDN,
     scanQueue: env.SCAN_QUEUE ?? "scan",
+    worker: {
+      gitleaksBin: env.GITLEAKS_BIN ?? "gitleaks",
+      pythonBin: env.PYTHON_BIN ?? "python3",
+      importsScript: env.IMPORTS_SCRIPT ?? resolve(REPO_ROOT, "scanner", "imports.py"),
+      runtimeManifestPath: env.RUNTIME_MANIFEST ?? resolve(REPO_ROOT, "tests", "runtime-manifest.python-1.json"),
+      defenderTimeoutSeconds: int(env.DEFENDER_TIMEOUT_SECONDS, 60),
+      defenderPollSeconds: int(env.DEFENDER_POLL_SECONDS, 2),
+      defenderFakeMalicious: new Set((env.DEFENDER_FAKE_MALICIOUS ?? "").split(",").map((s) => s.trim()).filter(Boolean)),
+      gcIntervalSeconds: int(env.GC_INTERVAL_SECONDS, 600),
+      pipelineTrigger,
+      ado,
+      intakeInternalUrl: (env.INTAKE_INTERNAL_URL ?? `http://localhost:${port}`).replace(/\/+$/, ""),
+    },
   };
 }
 

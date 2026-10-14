@@ -1,4 +1,4 @@
-// Resolves the repository root so both packages can find contracts/ and scanner/src/python/imports.py.
+// Resolves the repository root so both packages can find contracts/ and scanner/imports.py.
 // Both packages compile with rootDir ".." into <pkg>/dist/<repo-relative path>, so from any compiled
 // module the repo root is a fixed number of levels up. Override with REPO_ROOT (e.g. in a container).
 import { dirname, resolve } from "node:path";

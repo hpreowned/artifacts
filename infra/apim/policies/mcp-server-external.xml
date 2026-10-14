@@ -1,0 +1,45 @@
+<!-- MCP-server scope policy for EXTERNAL-mode APIM (no App Gateway in front).
+     Identical to mcp-server.xml plus an ip-filter for Anthropic's documented outbound range
+     160.79.104.0/21 (160.79.104.0 - 160.79.111.255). Do NOT apply this filter to upload/finalize:
+     the Cowork sandbox egress address is not documented. Behind App Gateway this filter sees the
+     gateway's IP and must NOT be used; put the range in a WAF custom rule instead (DESIGN §6.10). -->
+<policies>
+  <inbound>
+    <base />
+    <ip-filter action="allow">
+      <address-range from="160.79.104.0" to="160.79.111.255" />
+    </ip-filter>
+    <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(context.Request.IpAddress)" />
+    <validate-azure-ad-token tenant-id="{{tenant-id}}" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized" output-token-variable-name="jwt">
+      <audiences>
+        <audience>{{artifacts-mcp-client-id}}</audience>
+      </audiences>
+      <client-application-ids>
+        <application-id>{{claude-connector-client-id}}</application-id>
+      </client-application-ids>
+      <required-claims>
+        <claim name="scp" match="any">
+          <value>artifacts.publish</value>
+        </claim>
+      </required-claims>
+    </validate-azure-ad-token>
+    <set-header name="X-Publisher-Oid" exists-action="override">
+      <value>@(((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("oid", ""))</value>
+    </set-header>
+    <set-header name="X-Publisher-Upn" exists-action="override">
+      <value>@(((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("preferred_username", ""))</value>
+    </set-header>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error>
+    <base />
+    <choose>
+      <when condition="@(context.Response.StatusCode == 401)">
+        <set-header name="WWW-Authenticate" exists-action="override">
+          <value>Bearer resource_metadata="https://mcp.corp.com/.well-known/oauth-protected-resource/artifacts-mcp/mcp"</value>
+        </set-header>
+      </when>
+    </choose>
+  </on-error>
+</policies>

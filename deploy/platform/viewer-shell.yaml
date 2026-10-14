@@ -1,0 +1,111 @@
+# viewer-shell (agent-serve's code, DESIGN §3, D8). MSAL sign-in, audit log line per view, mints a view token
+# through intake-api's internal /v1/view-token, renders the iframe page. Entra values come from
+# infra/entra/verify.sh; the client secret is Key Vault secret entra-shell-client-secret via the CSI driver.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: viewer-shell
+  namespace: artifacts-system
+  labels:
+    app.kubernetes.io/name: viewer-shell
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: viewer-shell
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: viewer-shell
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: viewer-shell
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: viewer-shell
+          image: jfrog.corp.com/artifacts/viewer-shell:<tag>
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: AUTH_MODE
+              value: entra              # the dev bypass (T21) must be off here
+            - name: AZURE_TENANT_ID
+              value: "<tenant-id>"
+            - name: AZURE_CLIENT_ID
+              value: "<artifacts-viewer-shell-app-id>"
+            - name: REDIRECT_URI
+              value: https://artifacts.corp.com/auth/callback
+            - name: SHELL_URL
+              value: https://artifacts.corp.com
+            - name: ARTIFACT_DOMAIN
+              value: corp-artifacts.net
+            - name: INTAKE_URL
+              value: http://intake-api.artifacts-system.svc:8080
+          envFrom:
+            - secretRef:
+                name: viewer-shell-secrets   # AZURE_CLIENT_SECRET, INTERNAL_SHARED_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: viewer-shell-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: viewer-shell
+  namespace: artifacts-system
+  labels:
+    app.kubernetes.io/name: viewer-shell
+spec:
+  selector:
+    app.kubernetes.io/name: viewer-shell
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

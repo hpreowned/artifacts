@@ -1,0 +1,57 @@
+# Mounts the gateway-tls SecretProviderClass so the Secrets Store CSI driver materialises the two
+# kubernetes.io/tls Secrets the Gateway references (secretObjects only sync while a pod mounts the class).
+# The container does nothing. Rotation: the add-on's secret rotation (enabled on the add-on, default poll
+# 2 min) updates the mounted files and the synced Secrets; Istio picks up Secret changes without a restart.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tls-sync
+  namespace: artifacts-system
+  labels:
+    app.kubernetes.io/name: tls-sync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tls-sync
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tls-sync
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: tls-sync
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pause
+          image: jfrog.corp.com/docker/pause:3.10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 20m
+              memory: 32Mi
+          volumeMounts:
+            - name: tls
+              mountPath: /mnt/tls
+              readOnly: true
+      volumes:
+        - name: tls
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: gateway-tls

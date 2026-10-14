@@ -1,0 +1,38 @@
+<!-- MCP-server scope policy, DESIGN.md §6.10 verbatim. {{...}} are APIM named values. -->
+<policies>
+  <inbound>
+    <base />
+    <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(context.Request.IpAddress)" />
+    <validate-azure-ad-token tenant-id="{{tenant-id}}" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized" output-token-variable-name="jwt">
+      <audiences>
+        <audience>{{artifacts-mcp-client-id}}</audience>
+      </audiences>
+      <client-application-ids>
+        <application-id>{{claude-connector-client-id}}</application-id>
+      </client-application-ids>
+      <required-claims>
+        <claim name="scp" match="any">
+          <value>artifacts.publish</value>
+        </claim>
+      </required-claims>
+    </validate-azure-ad-token>
+    <set-header name="X-Publisher-Oid" exists-action="override">
+      <value>@(((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("oid", ""))</value>
+    </set-header>
+    <set-header name="X-Publisher-Upn" exists-action="override">
+      <value>@(((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("preferred_username", ""))</value>
+    </set-header>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error>
+    <base />
+    <choose>
+      <when condition="@(context.Response.StatusCode == 401)">
+        <set-header name="WWW-Authenticate" exists-action="override">
+          <value>Bearer resource_metadata="https://mcp.corp.com/.well-known/oauth-protected-resource/artifacts-mcp/mcp"</value>
+        </set-header>
+      </when>
+    </choose>
+  </on-error>
+</policies>

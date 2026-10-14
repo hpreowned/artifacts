@@ -1,0 +1,111 @@
+# Builds the platform images, pushes them to JFrog, applies deploy/ to the cluster (D12: the only path to AKS).
+# The agents in <your-vnet-pool> are assumed to be logged in to jfrog.corp.com already (they build the org's
+# other images), so no registry service connection is introduced here. python-runtime has its own job because
+# it is referenced by digest and its runtime-manifest.json feeds the scanner and the skill reference.
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - intake-api/
+      - scanner/
+      - static-gateway/
+      - viewer-shell/
+      - python-runtime/
+      - deploy/
+      - pipelines/platform-deploy.yml
+pr: none
+
+pool:
+  name: <your-vnet-pool>
+
+variables:
+  - group: artifacts-platform
+  - name: registry
+    value: jfrog.corp.com/artifacts
+  - name: tag
+    value: $(Build.BuildId)
+
+stages:
+  - stage: Build
+    jobs:
+      - job: images
+        displayName: Build and push
+        strategy:
+          matrix:
+            intake-api:
+              name: intake-api
+            scanner:
+              name: scanner
+            static-gateway:
+              name: static-gateway
+            viewer-shell:
+              name: viewer-shell
+        steps:
+          - checkout: self
+          - script: |
+              set -euo pipefail
+              docker build --pull -t "$(registry)/$(name):$(tag)" "$(name)/"
+              docker push "$(registry)/$(name):$(tag)"
+              docker image inspect --format '{{index .RepoDigests 0}}' "$(registry)/$(name):$(tag)"
+            displayName: docker build and push $(name)
+
+      - job: runtime
+        displayName: Build python-runtime, emit runtime-manifest.json
+        steps:
+          - checkout: self
+          - script: |
+              set -euo pipefail
+              docker build --pull -t "$(registry)/python-runtime:$(tag)" python-runtime/
+              docker push "$(registry)/python-runtime:$(tag)"
+              digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$(registry)/python-runtime:$(tag)")"
+              echo "python-runtime pushed as $digest"
+              echo "set variable group artifacts-platform PYTHON_RUNTIME_IMAGE=$digest (deliberate, by a person)"
+              mkdir -p "$(Build.ArtifactStagingDirectory)/runtime"
+              docker run --rm "$(registry)/python-runtime:$(tag)" cat /runtime-manifest.json \
+                > "$(Build.ArtifactStagingDirectory)/runtime/runtime-manifest.python-1.json"
+              printf '%s\n' "$digest" > "$(Build.ArtifactStagingDirectory)/runtime/image-digest.txt"
+            displayName: build, push, extract manifest
+          - publish: $(Build.ArtifactStagingDirectory)/runtime
+            artifact: python-runtime
+            displayName: Publish runtime-manifest.json and digest
+
+  - stage: Deploy
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: apply
+        displayName: Apply deploy/ to AKS
+        environment: artifacts-platform
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - script: |
+                    set -euo pipefail
+                    out="$(Build.ArtifactStagingDirectory)/manifests"
+                    mkdir -p "$out"
+                    # order matters only for first apply; kubectl retries unknown kinds after CRDs exist
+                    for f in deploy/namespaces.yaml deploy/gateway.yaml deploy/routes-static.yaml deploy/networkpolicy-dynamic.yaml deploy/platform/*.yaml; do
+                      sed "s|:<tag>|:$(tag)|g" "$f" > "$out/$(basename "$f")"
+                    done
+                    grep -l '<' "$out"/*.yaml | xargs -r grep -n '<[a-z-]*>' || true
+                    ls "$out"
+                  displayName: Substitute image tags
+                - task: Kubernetes@1
+                  displayName: kubectl apply -f manifests/
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    command: apply
+                    useConfigurationFile: true
+                    configuration: $(Build.ArtifactStagingDirectory)/manifests
+                - task: Kubernetes@1
+                  displayName: rollout status
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    namespace: artifacts-system
+                    command: rollout
+                    arguments: status deploy/intake-api deploy/scanner-worker deploy/viewer-shell --timeout=180s

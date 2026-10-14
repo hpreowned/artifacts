@@ -2,6 +2,7 @@
 // a non-zero exit is a scanner problem (job → failed), not an author problem.
 import { spawn } from "node:child_process";
 import type { Finding } from "../../intake-api/src/job.js";
+import { severityOf } from "./policy.js";
 
 export interface PythonOptions {
   pythonBin: string;
@@ -30,7 +31,7 @@ function toFinding(item: unknown): Finding {
   if (typeof v !== "object" || v === null || typeof v.rule !== "string" || !RULE_RE.test(v.rule) || typeof v.message !== "string") {
     throw new Error(`imports.py emitted a malformed finding: ${JSON.stringify(item).slice(0, 200)}`);
   }
-  const finding: Finding = { rule: v.rule, severity: "deny", message: v.message };
+  const finding: Finding = { rule: v.rule, severity: severityOf(v.rule), message: v.message };
   if (typeof v.file === "string") finding.file = v.file;
   if (typeof v.line === "number" && v.line > 0) finding.line = v.line;
   return finding;

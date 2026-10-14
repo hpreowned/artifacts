@@ -1,18 +1,18 @@
 // Stage 4 (static): HTML-001..HTML-009, and stage 5 (python): PY-004 by file presence. Rule texts are in
-// contracts/findings.md; severities come from policy.ts, the placeholders here are overwritten there.
+// contracts/findings.md; severities are looked up in policy.ts, the single rule → severity table.
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Finding, Manifest } from "../../intake-api/src/job.js";
 import { manifestValidator } from "../../intake-api/src/manifest-validator.js";
 import { isExternalHttp, lineAt, parseHtml, pointsElsewhere } from "./html-parse.js";
 import { extensionOf } from "./limits.js";
+import { severityOf } from "./policy.js";
 
-const f = (rule: string, file: string, line: number, message: string): Finding => ({ rule, severity: "deny", file, line, message });
+const f = (rule: string, file: string, line: number, message: string): Finding => ({ rule, severity: severityOf(rule), file, line, message });
 
 const FRAMING_TAGS = new Set(["iframe", "frame", "embed", "object"]);
 const DOCUMENT_EXTENSIONS = new Set(["html", "svg"]); // svg executes inline <script> when opened as a document
 const BLOB_MIN_CHARS = 64 * 1024;
-const BLOB_RE = /[A-Za-z0-9+/=_-]{65536,}/g;
 const DANGEROUS_CALL_RE = /\b(eval|new\s+Function|document\s*\.\s*write(?:ln)?)\s*\(/g;
 const NETWORK_RE = /\b(fetch\s*\(|XMLHttpRequest\b|WebSocket\s*\()/g;
 
@@ -82,13 +82,30 @@ export function checkScript(file: string, body: string, baseLine: number): Findi
       findings.push(f("HTML-006", file, lineOf(m.index), `${m[1]!.replace(/\s+/g, " ")}( with a non-literal argument`));
     }
   }
-  for (const m of body.matchAll(BLOB_RE)) {
-    findings.push(f("HTML-007", file, lineOf(m.index), `encoded blob of ${m[0].length} characters inside a script (limit ${BLOB_MIN_CHARS})`));
+  for (const run of encodedRuns(body, BLOB_MIN_CHARS)) {
+    findings.push(f("HTML-007", file, lineOf(run.offset), `encoded blob of ${run.length} characters inside a script (limit ${BLOB_MIN_CHARS})`));
   }
   for (const m of body.matchAll(NETWORK_RE)) {
-    findings.push({ ...f("HTML-009", file, lineOf(m.index), `${m[1]!.replace(/\s*\($/, "")} is blocked at serve time by connect-src 'none'`), severity: "info" });
+    findings.push(f("HTML-009", file, lineOf(m.index), `${m[1]!.replace(/\s*\($/, "")} is blocked at serve time by connect-src 'none'`));
   }
   return findings;
+}
+
+/** Maximal runs of base64 / base64url / hex characters at least `min` long. Linear: a regex with `{65536,}` backtracks quadratically. */
+export function encodedRuns(body: string, min: number): { offset: number; length: number }[] {
+  const runs: { offset: number; length: number }[] = [];
+  let start = -1;
+  for (let i = 0; i <= body.length; i++) {
+    const c = i < body.length ? body.charCodeAt(i) : -1;
+    const inClass = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 43 || c === 47 || c === 61 || c === 95 || c === 45;
+    if (inClass) {
+      if (start < 0) start = i;
+    } else if (start >= 0) {
+      if (i - start >= min) runs.push({ offset: start, length: i - start });
+      start = -1;
+    }
+  }
+  return runs;
 }
 
 /** True when everything up to the closing paren is string literals (no `${`) separated by commas, or nothing. */
@@ -130,7 +147,7 @@ export function pythonFileChecks(files: string[]): Finding[] {
   for (const file of files) {
     const base = file.split("/").pop() ?? file;
     if (PACKAGING_FILES.has(base.toLowerCase()) || /\.(whl|tar\.gz)$/i.test(base)) {
-      findings.push({ rule: "PY-004", severity: "deny", file, message: `${base} is not allowed; the python-1 runtime fixes the dependency set` });
+      findings.push({ rule: "PY-004", severity: severityOf("PY-004"), file, message: `${base} is not allowed; the python-1 runtime fixes the dependency set` });
     }
   }
   return findings;

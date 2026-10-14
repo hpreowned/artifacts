@@ -144,7 +144,10 @@ components:
       schema: { $ref: '#/components/schemas/JobId' }
   responses:
     BadRequest:
-      description: Manifest invalid
+      description: |
+        Manifest invalid. No job is created and nothing can be uploaded. The body carries the IN-* findings
+        (at least IN-006). Clients treat this exactly like a job in state `rejected`: show the findings, fix,
+        resubmit. `tests/corpus/static-bad-manifest` expects this path.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

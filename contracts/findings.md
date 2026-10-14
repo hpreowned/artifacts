@@ -12,7 +12,8 @@ Every finding is `{ rule, severity, file?, line?, message }` (see intake-openapi
 | IN-006 | intake | deny | manifest missing or fails `manifest.schema.json` |
 | IN-007 | intake | deny | tier mismatch by content (`.py` in a static bundle; no `app.py` or any `.html` in a python bundle) |
 | IN-008 | intake | deny | entrypoint file missing |
-| SEC-001 | secrets | deny | gitleaks finding (rule id in message) |
+| SEC-000 | secrets | warn | gitleaks binary unavailable; only the built-in regex pack ran. Must never appear in production, alert on it. |
+| SEC-001 | secrets | deny | gitleaks finding (rule id in message); the built-in regex pack also emits this id |
 | MAL-001 | malware | deny | Defender for Storage result `Malicious` |
 | MAL-002 | malware | deny | Defender result `Error`, `Not scanned`, or timed out; resubmit |
 | HTML-001 | html | deny | `<script src>` not in the manifest `externalScripts` or not on an allowlisted CDN |

@@ -21,9 +21,9 @@ case "${1:-start}" in
   start)
     [ -f "$pidfile" ] && { echo "already running (pids in $pidfile); run stop first"; exit 1; }
     for d in intake-api static-gateway viewer-shell; do [ -d "$ROOT/$d/node_modules" ] || npm --prefix "$ROOT/$d" ci --silent; done
-    ( cd "$ROOT/intake-api"     && PORT=8080 exec npm run -s dev ) > "$L/logs/intake.log"  2>&1 & echo $! >  "$pidfile"
-    ( cd "$ROOT/static-gateway" && PORT=8081 exec npm run -s dev ) > "$L/logs/gateway.log" 2>&1 & echo $! >> "$pidfile"
-    ( cd "$ROOT/viewer-shell"   && PORT=8082 exec npm run -s dev ) > "$L/logs/shell.log"   2>&1 & echo $! >> "$pidfile"
+    ( cd "$ROOT/intake-api"     && PORT=8080 exec nohup npm run -s dev ) > "$L/logs/intake.log"  2>&1 & echo $! >  "$pidfile"; disown
+    ( cd "$ROOT/static-gateway" && PORT=8081 exec nohup npm run -s dev ) > "$L/logs/gateway.log" 2>&1 & echo $! >> "$pidfile"; disown
+    ( cd "$ROOT/viewer-shell"   && PORT=8082 exec nohup npm run -s dev ) > "$L/logs/shell.log"   2>&1 & echo $! >> "$pidfile"; disown
     for p in 8080 8081 8082; do curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://localhost:$p/" || true; done
     echo "started: intake 8080, gateway 8081, shell 8082; logs in $L/logs; env in $ENV"
     ;;

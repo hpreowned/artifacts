@@ -203,7 +203,7 @@ gitleaks is now the only open-source binary left. If it is also out, two Microso
 | 1 | Intake | intake-api | zip > 25 MiB, > 500 files, zip-slip, symlinks, file types outside allowlist (`html css js json svg png jpg webp woff2 txt md csv py`), manifest invalid, tier mismatch by content | both |
 | 2 | Secrets | gitleaks | any hit, no exceptions | both |
 | 3 | Malware | Defender for Storage, on upload of `intake/{jobId}.zip` | scan result `Malicious`; `Error`, `Not scanned` or no result within 60 s → human review, not auto-allow | both |
-| 4 | HTML/JS rules | `checks.ts` | `<script src>` not in CDN allowlist; `<form action>`, `<iframe src>`, `<meta http-equiv=refresh>`, `<link rel=import>` to any host; `<input type="password">`; `eval(`, `new Function(`, `document.write(` with non-literal input; base64 blob > 64 KiB inside `<script>`; `<a target=_blank>` to external hosts (warn) | static |
+| 4 | HTML/JS rules | `checks.ts` | `<script src>` not in CDN allowlist; `<form action>`, `<iframe src>`, `<meta http-equiv=refresh>`, `<link rel=import>` to any host; `<input type="password">`; `eval(`, `new Function(`, `document.write(` with non-literal input; base64 blob > 64 KiB inside `<script>`; any `<a>` to an external host (warn); `fetch`/XHR/WebSocket present (info) | static |
 | 5 | Python rules | `imports.py` + `checks.ts` | any import outside stdlib ∪ `runtime-manifest.json`; `subprocess`, `os.system`, `os.exec*`, `os.fork`, `socket`, `ctypes`, `pickle`, `marshal`, `eval(`, `exec(`, `__import__`, `importlib`, `open(` with a path outside `/tmp`; any `requirements.txt` present (dependencies are not yours to choose) | python |
 | 6 | Verdict | `policy.ts` | any `deny` row | both |
 | 7 | Pipeline scan | Azure DevOps `artifact-python-deploy`: gitleaks under your existing policy, Sonar via the existing service connection | gitleaks hit (should never happen, stage 2 already ran); Sonar is **advisory**, its report is attached for the approver, it does not block | python |
@@ -404,7 +404,7 @@ spec:
         - source:
             principals: ["cluster.local/*"]
 ```
-ztunnel enforces L4 policy on the receiving side only. Plaintext from a non-mesh pod carries no principal, so this policy rejects it at every mesh workload. It also rejects every other non-mesh client in the cluster, which is the point; audit before enforcing. Egress deny-all for artifact pods is NetworkPolicy's job, not Istio's: ambient has no client-side AuthorizationPolicy.
+ztunnel enforces L4 policy on the receiving side only. Plaintext from a non-mesh pod carries no principal, so this policy rejects it at every mesh workload. It also rejects every other non-mesh client in the cluster, which is the point. ztunnel does **not** support `action: AUDIT` or dry-run for L4 policy (Istio documents AUDIT and CUSTOM as waypoint-only), so there is no audit-first mode: roll it out as a canary, first scoped to `artifacts-static` with the workload selector, watch for denied callers for a week, then apply the root policy. Egress deny-all for artifact pods is NetworkPolicy's job, not Istio's: ambient has no client-side AuthorizationPolicy.
 
 ### 6.9 What ships to Cowork, and what does not
 
@@ -427,7 +427,7 @@ Both endpoints must be **reachable from outside your network**. "Internal-only" 
 **What Entra can and cannot do.** Entra does not implement dynamic client registration (RFC 7591) and does not advertise Client ID Metadata Documents. Claude's connector dialog offers three options; the only one that works with Entra as the authorization server is **"Use your own OAuth client"** with a pre-registered client ID. The alternative, an APIM-hosted OAuth facade that fakes a registration endpoint and federates to Entra, exists as an Azure sample marked experimental. Not for this.
 
 **Entra app registrations (two)**
-1. `artifacts-mcp` (the resource). Application ID URI **exactly** `https://mcp.corp.com/artifacts-mcp/mcp`, which must equal the URL you type into the connector dialog (watch trailing slashes). Expose scope `artifacts.publish`. Manifest `requestedAccessTokenVersion: 2`. A mismatch fails the token request with `AADSTS9010010`.
+1. `artifacts-mcp` (the resource). Application ID URI **exactly** `https://mcp.corp.com/artifacts-mcp/mcp`, which must equal the URL you type into the connector dialog (watch trailing slashes). A URL-style Application ID URI is only accepted when its host is under a **verified domain** of the tenant; verify `corp.com` (or whichever domain carries the MCP hostname) before running the script. Expose scope `artifacts.publish`. Manifest `requestedAccessTokenVersion: 2`. A mismatch fails the token request with `AADSTS9010010`.
 2. `claude-connector` (the client). Public client, no secret, redirect URI **exactly** `https://claude.ai/api/mcp/auth_callback`, API permission `artifacts-mcp / artifacts.publish`, admin consent granted. Restrict assignment to the users or group allowed to publish.
 
 **Connector dialog.** URL `https://mcp.corp.com/artifacts-mcp/mcp`, authentication "Use your own OAuth client", client ID of `claude-connector`, no secret. You cannot change the auth settings after adding; delete and re-add if wrong.
@@ -502,7 +502,7 @@ The upload and finalize operations are on the same API but outside the MCP serve
 
 Prerequisite to confirm: the agents that run this pipeline can reach the private cluster's API server and the private Blob endpoint. Microsoft-hosted agents cannot. You already deploy to this cluster from Azure DevOps, so you have self-hosted agents or a Managed DevOps Pool in the VNet; the pipeline runs on that pool.
 
-How the worker triggers it: `POST https://dev.azure.com/<org>/<project>/_apis/pipelines/<id>/runs?api-version=7.1` with `templateParameters: { jobId }`, authenticated with an Entra access token for the Azure DevOps resource obtained through the worker's workload identity (grant that identity the Queue builds permission on this one pipeline). No PAT anywhere.
+How the worker triggers it: `POST https://dev.azure.com/<org>/<project>/_apis/pipelines/<id>/runs?api-version=7.1` with `templateParameters: { jobId }`, authenticated with an Entra access token for the Azure DevOps resource obtained through the worker's workload identity (grant that identity the Queue builds permission on this one pipeline). No PAT anywhere. The pipeline reads everything else it needs (`artifactId`, `expiresAt`, entrypoint, tier) from the job record `jobs/<jobId>.json` through the storage service connection; `jobId` is the only parameter. Callbacks go to the contract path `${INTAKE_EVENTS_URL}/v1/publish/<jobId>/events`.
 
 ```yaml
 # pipelines/artifact-python-deploy.yml  (outline; real file in the pipeline repo)
@@ -546,8 +546,8 @@ stages:
                     namespace: artifacts-dynamic
                     manifests: manifests.yaml
                 - script: >-
-                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}"
-                    -H "Authorization: Bearer $(PIPELINE_TOKEN)"
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events"
+                    -H "Authorization: Bearer $(PIPELINE_TOKEN)" -H "Content-Type: application/json"
                     -d '{"state":"live"}'
 ```
 The Environment `artifacts-dynamic` carries the approval check (Entra group `artifacts-approvers`, timeout 7 days); it is configured on the Environment, not in YAML. Your policy template already injects gitleaks; the explicit step above shows where it lands. Sonar is advisory: no quality-gate break, the report link is what the approver reads. Callbacks: the Fetch stage posts `awaiting_approval` with the run URL; an `always()` job posts `failed` or `rejected` when a stage fails or the approval is declined. `render.sh` fills the §6.6 template from the pipeline repo.

@@ -11,6 +11,7 @@ One job per `beginPublish`. One artifact id per job. States and who moves them:
 | scanning | deploying | scanner worker | tier static, verdict pass |
 | scanning | awaiting_approval | Azure DevOps pipeline via /events | tier python, verdict pass, pipeline reached the approval check |
 | scanning | failed | scanner worker | internal error, Defender result `Error`, pipeline trigger failed |
+| scanning | failed | scanner worker | python job: `runUrl` set but no `/events` callback within `PIPELINE_TIMEOUT_HOURS` (default 24) |
 | awaiting_approval | deploying | pipeline via /events | approval granted |
 | awaiting_approval | rejected | pipeline via /events | approval declined |
 | awaiting_approval | expired | pipeline via /events | approval check timed out (7 days) |

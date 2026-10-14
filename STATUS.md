@@ -1,6 +1,6 @@
 # STATUS — single source of truth
 
-Updated: 2026-10-14 by orchestrator (Claude Code, session 1).
+Updated: 2026-10-14 (end of day 1) by orchestrator (Claude Code, session 1).
 
 How this file works: `DESIGN.md` is the what and why (changes by PR). This file is where we are. Agents edit only the `Owner`, `State`, `Evidence` cells of their own task rows. The orchestrator owns milestones, integration items, the decisions log and the daily log. States: `todo`, `doing`, `blocked`, `done`.
 
@@ -20,7 +20,7 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 | M | Name | Gate (must pass to cross) | State |
 |---|---|---|---|
 | M0 | Contracts frozen, repo scaffolded, agents briefed | `contracts/`, `tests/corpus/` committed; four agents launched with their rows | done 2026-10-14 |
-| M1 | Static tier runs locally end to end | `tests/negative.sh` passes against the local dev stack (memory backends) | todo |
+| M1 | Static tier runs locally end to end | `tests/negative.sh` passes against the local dev stack (memory backends) | done 2026-10-14: 21/21 on the merged stack (`tests/dev-stack.sh`), viewer path walked by hand (shell → token → gateway cookie → CSP headers → 403 paths) |
 | M2 | Static tier live in the AKS dev namespace | real internal URL; corpus passes on cluster; EICAR upload rejected with a Defender alert; browser tests for `static-fetch` and `static-navigate` pass | todo |
 | M3 | Connector path proven | a tool call through APIM logs the caller oid; a `PUT` from inside a Cowork task returns 201 | todo |
 | M4 | First publish from Cowork | an employee publishes from Cowork, a colleague opens the link and signs in | todo |
@@ -48,12 +48,16 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 | T42 | `deploy/`: namespaces with PSA and mesh labels, ResourceQuota, Istio Gateway with both listeners, HTTPRoute templates, NetworkPolicy, mesh root AuthorizationPolicy (audit first), Azure Policy assignment script, `untrusted` node pool script, python artifact Deployment template + `render.sh`, platform Deployments for intake, worker, gateway, shell | agent-platform | done | every manifest parses; `render.sh` output matches DESIGN §6.6 | d6aa194, 1f01d1b, c7aed0f, deba270, b77c084: `deploy/validate.sh` — 12 manifests parse; test-render.sh asserts every DESIGN §6.6 field on tests/corpus/python-ok, args == tests/runtime-manifest.python-1.json, 6 bad inputs refused; policy scripts dry-run. Research: ztunnel does not enforce AUDIT, so a staged ALLOW canary ships instead (deploy/README.md) |
 | T43 | `pipelines/`: `artifact-python-deploy.yml` per DESIGN §6.12, `artifact-gc.yml`, `platform-deploy.yml` | agent-platform | done | YAML parses; pipelines reference only the service connections named in DESIGN | da11ebf: 3 pipelines parse (validate.sh); only `<storage-connection>`, `<aks-connection>`, `<sonar-connection>`, pool `<your-vnet-pool>`; callback path is the contract's `/v1/publish/{jobId}/events`; trigger needs templateParameters {jobId, artifactId} (DESIGN §6.12 says jobId only, see report) |
 | T44 | `python-runtime/`: Dockerfile per DESIGN §6.5 on the JFrog Python base; script that emits `runtime-manifest.json` from the installed packages | agent-platform | done | Dockerfile lints; manifest script tested with a fake pip list | f24687d: test-emit-manifest.sh — output equals tests/runtime-manifest.python-1.json on every key, refuses a missing curated dist and non-JSON; Dockerfile structure checked (USER 65532, WORKDIR /app, EXPOSE 8080, no ENTRYPOINT); docker/hadolint not installed, build untested |
+| T13 | `scanner/`: python job timeout, `scanning → failed` after `PIPELINE_TIMEOUT_HOURS` when `runUrl` is set and no callback arrived (contract added to states.md) | unassigned | todo | unit test with a stub clock | |
+| T14 | `contracts/` + `scanner/policy.ts`: add IN-009 (corrupt archive) and PY-006 (python does not parse) as dedicated ids; keep the policy drift test green | unassigned | todo | corpus bundles for both; drift test passes | |
+| T15 | `intake-api/`: `/view-token` also returns `artifactExpiresAt` so the shell banner can show the expiry | unassigned | todo | shell renders "Expires <date>" | |
+| T50 | M2 reconciliation: pipeline reads `jobs/<jobId>.json` for artifactId/expiresAt/entrypoint; `/healthz` on every service; env var names between `deploy/platform/` and the four READMEs; Defender tag key handling; pin scanner image Python to the runtime minor (3.12) | unassigned | todo | `deploy/README.md` interface table has no open rows | |
 
 ## Integration items (people, not agents)
 
 | ID | Item | Owner | State | Next action | Target |
 |---|---|---|---|---|---|
-| I1 | Two Entra app registrations (DESIGN §6.10), URI byte-identical to the MCP URL | you | todo | run `infra/entra/create.sh` or hand the README to the identity admin | week 1 |
+| I1 | Two Entra app registrations (DESIGN §6.10), URI byte-identical to the MCP URL | you | todo | first confirm the MCP hostname's domain is a verified domain in the tenant, then run `infra/entra/create.sh --dry-run` and hand `infra/entra/README.md` to the identity admin | week 1 |
 | I2 | APIM: import API, create MCP server, PRM operation, policy | you / APIM owner | todo | hand `contracts/intake-openapi.yaml` and `infra/apim/` to the APIM owner | week 1 |
 | I3 | App Gateway route + public DNS for `mcp.corp.com` | network team | todo | request with the hostname and the two path prefixes | week 1 |
 | I4 | Cowork network-egress allowlist entry for `mcp.corp.com` | Claude org admin | todo | request | week 1 |
@@ -72,7 +76,13 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 - 2026-10-14 LLM review stage: recommended as deny-or-escalate only, with an eval corpus; **decision pending**. `static-injection` is in the corpus for it already.
 - 2026-10-14 Progress tracking lives in this file in git; Azure DevOps Boards mirrors milestones only.
 - 2026-10-14 Gateway session cookie is `SameSite=None; Partitioned`, not `Strict`: the artifact origin is cross-site to the shell by design. DESIGN §6.4 corrected (agent-serve finding).
+- 2026-10-14 `SEC-000` (gitleaks unavailable, warn) added to the contract; must alert in production.
+- 2026-10-14 ztunnel does not enforce `AUDIT`; the mesh-root policy rolls out as a canary on `artifacts-static` first (agent-platform finding).
+- 2026-10-14 Pipeline takes only `jobId` and reads the job record from Blob; callbacks use the contract path `/v1/publish/{jobId}/events` (agent-platform finding).
+- 2026-10-14 Entra URL-style Application ID URI needs a verified domain; added to I1 (agent-platform finding).
+- 2026-10-14 Python jobs get a `scanning → failed` timeout transition (agent-intake finding); implementation is T13.
 
 ## Daily log (append-only, one line per day)
 
 - 2026-10-14 — Day 1. Repo initialised. `DESIGN.md` v2, contracts, 21-bundle corpus, control files committed. Four agents launched: intake, serve, client, platform. Standup page: https://claude.ai/code/artifact/122a8acb-4551-49b9-b8dd-eab812cbbc8f
+- 2026-10-14 — Day 1, continued. Rate limit interrupted all four agents once; resumed. All four branches merged to `main`. Unit suites: intake 14, scanner 63, gateway 19, shell 16, CLI 33, preflight 42, platform validate all pass. **M1 passed**: `tests/negative.sh` 21/21 on the merged local stack; viewer path verified by hand. Follow-ups T13–T15, T50 filed from agent reports.

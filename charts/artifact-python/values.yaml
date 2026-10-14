@@ -1,0 +1,44 @@
+# Defaults are deliberately invalid/empty so a release always has to supply every real value.
+# See templates/_helpers.tpl "artifact-python.validate" for the fail-fast checks.
+
+# 12 lowercase alphanumeric chars (contracts/intake-openapi.yaml ArtifactId).
+artifactId: ""
+
+# appPy is never set here; it comes from --set-file appPy=<path to app.py>.
+appPy: ""
+
+# RFC 3339 UTC, e.g. 2026-10-28T00:00:00Z. Stored on labels with ':' -> '-' (DESIGN §6.6 / render.sh form).
+expiresAt: ""
+
+# streamlit | fastapi — maps to the exact arg lists in tests/runtime-manifest.python-1.json.
+entrypoint: ""
+
+# Digest-pinned image: jfrog.corp.com/artifacts/python-runtime@sha256:<64 hex>
+image: ""
+
+# Job id this release was deployed for (label only; not used for rendering logic).
+jobId: ""
+
+domain:
+  # <artifactId>.<artifactDomain> is the HTTPRoute hostname.
+  artifactDomain: corp-artifacts.net
+
+gateway:
+  name: artifacts-internal
+  namespace: artifacts-system
+  sectionName: content
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+    ephemeral-storage: 256Mi
+
+tmp:
+  sizeLimit: 128Mi

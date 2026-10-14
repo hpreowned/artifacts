@@ -1,0 +1,15 @@
+{{- include "artifact-python.validate" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "artifact-python.fullname" . }}
+  namespace: artifacts-dynamic
+  labels:
+    {{- include "artifact-python.labels" . | nindent 4 }}
+spec:
+  selector:
+    artifacts.corp.com/id: {{ .Values.artifactId | quote }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.port }}

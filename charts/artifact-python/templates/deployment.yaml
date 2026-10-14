@@ -1,0 +1,76 @@
+{{- include "artifact-python.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "artifact-python.fullname" . }}
+  namespace: artifacts-dynamic
+  labels:
+    {{- include "artifact-python.labels" . | nindent 4 }}
+  # Release-level expiry, readable by `helm get manifest art-<id> -n artifacts-dynamic` so artifact-gc.yml
+  # does not have to query pods or labels to find it (T72). Same value as the label above, in annotation
+  # form because `helm get metadata` does not surface per-release custom data, only chart-level fields.
+  annotations:
+    artifacts.corp.com/expires-at: {{ include "artifact-python.expiresAtLabel" . | quote }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      artifacts.corp.com/id: {{ .Values.artifactId | quote }}
+  template:
+    metadata:
+      labels:
+        artifacts.corp.com/id: {{ .Values.artifactId | quote }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        agentpool: untrusted
+      tolerations:
+        - key: artifacts.corp.com/untrusted
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: {{ .Values.image | quote }}
+          args: {{ include "artifact-python.args" . }}
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 30
+      volumes:
+        - name: code
+          configMap:
+            name: {{ include "artifact-python.fullname" . }}-code
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmp.sizeLimit }}

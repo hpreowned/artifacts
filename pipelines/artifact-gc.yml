@@ -1,11 +1,24 @@
-# Nightly garbage collection, DESIGN §6.12 last paragraph, D12.
-#   1. Delete every object in artifacts-dynamic whose artifacts.corp.com/expires-at label is in the past
-#      (label form 2026-10-28T00-00-00Z: fixed-width UTC, so text comparison orders correctly).
+# Nightly garbage collection, DESIGN §6.12 last paragraph, D12, D13.
+#   1. Find every Helm release in artifacts-dynamic whose expiry has passed and `helm uninstall` it.
 #   2. Delete serving/<id>/ for every expired static artifact listed by intake-api's job records
 #      (jobs/<jobId>.json with artifactId, tier, state, expiresAt) and post `expired` for each.
 # Same pool, AKS service connection and INTAKE_EVENTS_URL convention as artifact-python-deploy.yml: the
 # variable is the bare intake base URL, every callback posts to <url>/v1/publish/<jobId>/events (the
 # contracts/intake-openapi.yaml path). Variable group artifacts-platform.
+#
+# T72 (M7, D13) — gc_dynamic replaced by `helm list` + `helm uninstall`, raw kubectl delete-by-label gone
+# -----------------------------------------------------------------------------------------------------------
+# Was: `kubectl get deploy -l artifacts.corp.com/expires-at` read the expiry off the Deployment's own label,
+# then `kubectl delete` the four object kinds by `artifacts.corp.com/id` label. Now each artifact is a Helm
+# release (charts/artifact-python, release name art-<id>), so GC lists releases and removes a whole release
+# at once with `helm uninstall` instead of deleting four kinds by hand.
+#
+# Mechanism chosen for reading expiry: `helm get manifest <release> -n artifacts-dynamic`, not
+# `helm get metadata`. `helm get metadata` only surfaces chart-level fields (name/version/appVersion/
+# chart/namespace) — nothing from a specific release's values — so it cannot carry a per-artifact expiry.
+# `charts/artifact-python/templates/deployment.yaml` sets `metadata.annotations["artifacts.corp.com/
+# expires-at"]` on the Deployment specifically so `helm get manifest` (which renders the release's stored
+# manifest, not a live cluster read) exposes it without a `kubectl get` / pod query at all.
 schedules:
   - cron: "0 3 * * *"
     displayName: Nightly artifact GC
@@ -24,10 +37,11 @@ variables:
 
 jobs:
   - job: gc_dynamic
-    displayName: Expire Python artifacts in artifacts-dynamic
+    displayName: Expire Python artifact Helm releases in artifacts-dynamic
     steps:
+      - checkout: none
       - task: Kubernetes@1
-        displayName: kubectl login
+        displayName: kubectl login (helm reads this kubeconfig too)
         inputs:
           connectionType: Kubernetes Service Connection
           kubernetesServiceEndpoint: <aks-connection>
@@ -37,17 +51,27 @@ jobs:
           set -euo pipefail
           now="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
           echo "now=$now"
-          kubectl -n artifacts-dynamic get deploy -l artifacts.corp.com/expires-at -o json \
-            | jq -r --arg now "$now" '.items[] | select(.metadata.labels["artifacts.corp.com/expires-at"] < $now) | .metadata.labels["artifacts.corp.com/id"]' \
-            | sort -u > expired-ids.txt
-          echo "expired: $(wc -l < expired-ids.txt)"
-          while IFS= read -r id; do
-            [ -n "$id" ] || continue
-            echo "deleting art-$id"
-            kubectl -n artifacts-dynamic delete deploy,svc,configmap,httproutes.gateway.networking.k8s.io \
-              -l "artifacts.corp.com/id=$id" --ignore-not-found
-          done < expired-ids.txt
-        displayName: Delete expired Deployments, Services, ConfigMaps, HTTPRoutes
+          : > expired-releases.txt
+          helm list -n artifacts-dynamic -o json | jq -r '.[] | select(.name | startswith("art-")) | .name' \
+          | while IFS= read -r release; do
+              [ -n "$release" ] || continue
+              expires="$(helm get manifest "$release" -n artifacts-dynamic \
+                | python3 -c 'import sys, yaml; docs = [d for d in yaml.safe_load_all(sys.stdin) if d and d.get("kind") == "Deployment"]; print(docs[0]["metadata"].get("annotations", {}).get("artifacts.corp.com/expires-at", "") if docs else "")')"
+              echo "release=$release expires=$expires"
+              if [ -n "$expires" ] && [ "$expires" \< "$now" ]; then
+                echo "$release" >> expired-releases.txt
+              fi
+            done
+          echo "expired: $(wc -l < expired-releases.txt)"
+        displayName: List releases, read expiry from helm get manifest
+      - script: |
+          set -euo pipefail
+          while IFS= read -r release; do
+            [ -n "$release" ] || continue
+            echo "helm uninstall $release"
+            helm uninstall "$release" -n artifacts-dynamic
+          done < expired-releases.txt
+        displayName: helm uninstall expired releases
       - task: Kubernetes@1
         displayName: kubectl logout
         condition: always()

@@ -17,6 +17,29 @@
 #   PYTHON_RUNTIME_IMAGE  jfrog.corp.com/artifacts/python-runtime@sha256:<digest>
 #
 # -----------------------------------------------------------------------------------------------------------
+# T72 (M7, D13) — Deploy stage replaced by `helm upgrade --install`, raw render.sh/KubernetesManifest@1 gone
+# -----------------------------------------------------------------------------------------------------------
+# Was: `render.sh` filled deploy/python-artifact/template.yaml, then `KubernetesManifest@1` applied the
+# result. Now: `charts/artifact-python` (checked out with `checkout: self`, kept below) renders the same
+# ConfigMap/Deployment/Service/HTTPRoute from values, and `helm upgrade --install art-<artifactId> ...` both
+# renders and applies in one step, giving us `--wait`/`--timeout` for the rollout check that
+# `KubernetesManifest@1`'s `rolloutStatusTimeout` used to provide.
+#
+# Task choice: a plain `script` step running the `helm` CLI, authenticated against the cluster via
+# `Kubernetes@1` (`command: login`) immediately before it, rather than `HelmDeploy@1`. Reasons:
+#   - `HelmDeploy@1` wraps a fixed set of helm subcommands (install/upgrade/package/...) behind task inputs;
+#     `--set-file appPy=...` (a file-valued --set, not a values file) and reading PYTHON_RUNTIME_IMAGE from
+#     a variable group are awkward to express through its input schema, whereas the CLI gets both for free.
+#   - `Kubernetes@1 login` writes a kubeconfig from the `kubernetesServiceConnection` into
+#     `KUBECONFIG`/`$(Agent.TempDirectory)` and does nothing else; it is the same primitive
+#     `KubernetesManifest@1` used internally, so the AKS service connection, RBAC and audit trail are
+#     unchanged from before this task. `helm` on the self-hosted pool picks up that kubeconfig the same way
+#     `kubectl` would.
+#   - Keeps this stage's failure/report step shape (one `script` per concern, `name:` + guarded report step)
+#     identical to every other step in this file instead of inventing a parallel pattern for one task.
+# `helm uninstall` equivalent in pipelines/artifact-gc.yml uses the same `Kubernetes@1` login for consistency.
+#
+# -----------------------------------------------------------------------------------------------------------
 # T51 — step-scoped failure reporting (2026-10-14, agent-pipeline)
 # -----------------------------------------------------------------------------------------------------------
 # Was: the Report stage's verdict step used `condition: failed()`, which is job-wide — it fired on ANY
@@ -47,15 +70,15 @@
 #                                                        the job's state)
 #   Deploy / download bundle artifact    -> failed,    "deploy failed: download published bundle"
 #   Deploy / callback-deploying step     -> failed,    "deploy failed: callback deploying"
-#   Deploy / render manifests step       -> failed,    "deploy failed: render manifests"
-#   Deploy / kubectl apply / rollout     -> failed,    "deploy failed: kubectl apply (rollout)"
+#   Deploy / kubectl login (AKS conn)    -> failed,    "deploy failed: kubectl login"
+#   Deploy / helm upgrade --install      -> failed,    "deploy failed: helm upgrade"
 #   Deploy / callback-live step fails    -> failed,    "deploy failed: callback to intake after a
 #                                                        successful rollout; the app may already be live,
 #                                                        verify by hand" (rollout itself already succeeded)
 #   Deploy / any other step fails        -> failed,    "deploy failed: unspecified step (see run log)"
-#   Deploy stage never started (Fetch    -> rejected,  "approval declined or timed out in Azure DevOps;
-#     succeeded, Deploy stage == Skipped)              ..." — posted by the Report stage; see the
-#                                                        limitation below
+#   Deploy stage never started (Fetch    -> rejected or expired, from the Approvals REST API — see T52
+#     succeeded, Deploy stage == Skipped)              below; falls back to the old "can't tell them apart"
+#                                                        message only if the API call itself fails
 #
 # Research (do not guess the syntax; cited per instructions):
 #   - Job status check functions (failed(), succeeded(), succeededOrFailed(), always()), the `dependencies`
@@ -69,17 +92,51 @@
 #   - Environment approval checks, to find out what a declined vs. a timed-out check does to the stage:
 #     https://learn.microsoft.com/en-us/azure/devops/pipelines/process/approvals
 #
-# Known limitation (cannot be expressed in this file; not re-verified against a live run — see final report):
-#   Per the approvals doc above, a declined approval ("[the] stage isn't executed") and a timed-out one
-#   ("the stage is marked as skipped") are not documented as producing different, YAML-visible results —
-#   both leave `dependencies.Deploy.result` as `Skipped`, and the deployment job's own steps (where we could
-#   otherwise post a distinguishing callback, the way Fetch and Deploy report their own failures above)
-#   never run at all in either case. contracts/states.md wants `rejected` for a decline and `expired` for a
-#   timeout; this pipeline cannot tell them apart, so the Report stage always posts `rejected` with a
-#   message that says so and points at the Checks tab. Closing this for real needs an Azure DevOps REST
-#   call (the Approvals Query API) from the Report job, using the built-in `$(System.AccessToken)`, to read
-#   the approval's actual decision — left undone here because that is a REST API shape, not a
-#   conditions/expressions syntax question, and I have not verified it against its own docs.
+# -----------------------------------------------------------------------------------------------------------
+# T52 — Report stage distinguishes a declined approval from a timed-out one via the Approvals REST API
+# -----------------------------------------------------------------------------------------------------------
+# Was: `dependencies.Deploy.result == 'Skipped'` cannot distinguish a decline from a timeout in YAML (both
+# leave the Deploy stage Skipped; the deployment job's own steps never run in either case), so the Report
+# stage always posted `rejected` with a message pointing at the Checks tab.
+#
+# Now: the Report job queries the Approvals REST API directly for *this run's* approval and reads its real
+# `status` (which the API does distinguish — see below) before posting.
+#
+# Research (do not guess the syntax; cited per instructions):
+#   - Approvals - Query: `GET https://dev.azure.com/{org}/{project}/_apis/pipelines/approvals?api-version=7.1`
+#     (optionally filtered by `approvalIds`, `state`, `userIds`). `ApprovalStatus` is an enum that DOES carry
+#     both outcomes we need to distinguish, among others: pending, approved, rejected, skipped, canceled,
+#     timedOut, failed, completed. `Approval.steps[]` carries `assignedApprover`/`actualApprover` (who) and
+#     `lastModifiedOn` (when):
+#     https://learn.microsoft.com/en-us/rest/api/azure/devops/approvalsandchecks/approvals/query?view=azure-devops-rest-7.1
+#   - Approvals - Get (fetch one approval by id once we have it):
+#     `GET https://dev.azure.com/{org}/{project}/_apis/pipelines/approvals/{approvalId}?api-version=7.1`
+#     https://learn.microsoft.com/en-us/rest/api/azure/devops/approvalsandchecks/approvals/get?view=azure-devops-rest-7.1
+#   - The Query endpoint takes approval ids, not a run id, so the approval for *this* run has to be found via
+#     the run's own timeline: Timeline - Get, `GET
+#     https://dev.azure.com/{org}/{project}/_apis/build/builds/{buildId}/timeline?api-version=7.1` (Pipelines
+#     runs are Build objects under the hood; `$(Build.BuildId)` is this run's buildId):
+#     https://learn.microsoft.com/en-us/rest/api/azure/devops/build/timeline/get?view=azure-devops-rest-7.1
+#     The timeline's flat `records[]` list nests three levels for an environment-check approval: a `Stage`
+#     record for the Deploy stage, a child `Checkpoint` record (`parentId` == the Stage record's `id`), and a
+#     child `Checkpoint.Approval` record (`parentId` == the Checkpoint record's `id`) whose own `id` IS the
+#     approval id the Approvals API takes. (Confirmed against a worked curl/jq walkthrough that uses exactly
+#     this three-hop traversal and the same two Approvals endpoints above; Microsoft's own docs for the
+#     `Checkpoint`/`Checkpoint.Approval` record *types* are not published, only inferable from the timeline
+#     response shape, which is why this is flagged UNVERIFIED against a live run in the final report.)
+#
+# Permissions: the job needs `env: SYSTEM_ACCESSTOKEN: $(System.AccessToken)` (set below) plus "Allow scripts
+# to access the OAuth token" enabled for this pipeline/job, which grants the `vso.build` scope the Timeline
+# API needs. The build identity — the project's "{Project} Build Service ({Organization})" account that
+# already runs this pipeline — additionally needs read access to the environment's checks: grant it the
+# "Reader" role on the `artifacts-dynamic` Environment's security pane (Project Settings > Environments >
+# artifacts-dynamic > Security), which is what the Approvals Query/Get endpoints authorize against. This is
+# a project-level permission grant, not expressible in this YAML.
+#
+# What this cannot do: if the timeline walk itself fails (no Checkpoint.Approval record found — e.g. the
+# check was removed, or the environment has no approval check configured at all) the script falls back to
+# the old "can't tell them apart" message rather than guessing, so a pipeline change elsewhere can never
+# make this stage silently post a wrong state.
 parameters:
   - name: jobId
     type: string
@@ -263,7 +320,7 @@ stages:
           runOnce:
             deploy:
               steps:
-                - checkout: self        # deployment jobs do not check out the repo by default; render.sh lives in it
+                - checkout: self        # deployment jobs do not check out the repo by default; charts/ lives in it
                 - download: current
                   artifact: bundle
                   name: downloadArtifact
@@ -300,46 +357,60 @@ stages:
                   env:
                     PIPELINE_TOKEN: $(PIPELINE_TOKEN)
 
+                - task: Kubernetes@1
+                  displayName: kubectl login (AKS service connection; also used by helm below)
+                  name: kubectlLogin
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    namespace: artifacts-dynamic
+                    command: login
+
+                - script: |
+                    echo "##vso[task.setvariable variable=reported]1"
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: kubectl login\"}"
+                  displayName: "Report: kubectl login failed"
+                  name: kubectlLoginFailed
+                  condition: and(failed(), eq(variables['reported'], ''))
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
                 - script: |
                     set -euo pipefail
                     bundle="$(Pipeline.Workspace)/bundle"
                     echo "artifact=$(artifactId) entrypoint=$(entrypoint) expires=$(expiresAt) image=$(PYTHON_RUNTIME_IMAGE)"
-                    deploy/python-artifact/render.sh "$(artifactId)" "$bundle/app.py" "$(expiresAt)" "$(entrypoint)" "$(PYTHON_RUNTIME_IMAGE)" \
-                      > "$(Pipeline.Workspace)/manifests.yaml"
-                  displayName: Render manifests
-                  name: render
+                    helm upgrade --install "art-$(artifactId)" "$(Build.SourcesDirectory)/charts/artifact-python" \
+                      --namespace artifacts-dynamic \
+                      --set artifactId="$(artifactId)" \
+                      --set-file appPy="$bundle/app.py" \
+                      --set expiresAt="$(expiresAt)" \
+                      --set entrypoint="$(entrypoint)" \
+                      --set image="$(PYTHON_RUNTIME_IMAGE)" \
+                      --set jobId="${{ parameters.jobId }}" \
+                      --wait --timeout 3m
+                  displayName: helm upgrade --install
+                  name: helmUpgrade
 
                 - script: |
                     echo "##vso[task.setvariable variable=reported]1"
                     curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
                       -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
-                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: render manifests\"}"
-                  displayName: "Report: render manifests failed"
-                  name: renderFailed
+                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: helm upgrade\"}"
+                  displayName: "Report: helm upgrade failed"
+                  name: helmUpgradeFailed
                   condition: and(failed(), eq(variables['reported'], ''))
                   env:
                     PIPELINE_TOKEN: $(PIPELINE_TOKEN)
 
-                - task: KubernetesManifest@1
-                  displayName: kubectl apply (AKS service connection)
-                  name: kubectlApply
+                - task: Kubernetes@1
+                  displayName: kubectl logout
+                  condition: always()
                   inputs:
-                    action: deploy
-                    kubernetesServiceConnection: <aks-connection>
-                    namespace: artifacts-dynamic
-                    manifests: $(Pipeline.Workspace)/manifests.yaml
-                    rolloutStatusTimeout: "180"
-
-                - script: |
-                    echo "##vso[task.setvariable variable=reported]1"
-                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
-                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
-                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: kubectl apply (rollout)\"}"
-                  displayName: "Report: kubectl apply or rollout failed"
-                  name: kubectlApplyFailed
-                  condition: and(failed(), eq(variables['reported'], ''))
-                  env:
-                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    command: logout
 
                 - script: |
                     set -euo pipefail
@@ -377,13 +448,55 @@ stages:
     condition: and(always(), eq(dependencies.Fetch.result, 'Succeeded'), eq(dependencies.Deploy.result, 'Skipped'))
     jobs:
       - job: report
+        # Needed for the Timeline and Approvals REST calls below (T52); see the research comment at the top
+        # of this file for the exact endpoints and the project permission this identity also needs.
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
         steps:
+          - checkout: none
           - script: |
               set -euo pipefail
+              org="$(System.TeamFoundationCollectionUri)"
+              project="$(System.TeamProject)"
+              auth=(-H "Authorization: Bearer $SYSTEM_ACCESSTOKEN")
+
+              # Walk this run's timeline: Stage "Deploy" -> child Checkpoint -> child Checkpoint.Approval.
+              # docs: https://learn.microsoft.com/en-us/rest/api/azure/devops/build/timeline/get?view=azure-devops-rest-7.1
+              timeline="$(curl -fsS "${auth[@]}" "${org}${project}/_apis/build/builds/$(Build.BuildId)/timeline?api-version=7.1")"
+              stage_id="$(echo "$timeline" | jq -r '.records[] | select(.type=="Stage" and .name=="Deploy") | .id' | head -n1)"
+              checkpoint_id="$(echo "$timeline" | jq -r --arg sid "$stage_id" '.records[] | select(.type=="Checkpoint" and .parentId==$sid) | .id' | head -n1)"
+              approval_id="$(echo "$timeline" | jq -r --arg cid "$checkpoint_id" '.records[] | select(.type=="Checkpoint.Approval" and .parentId==$cid) | .id' | head -n1)"
+              echo "stage=$stage_id checkpoint=$checkpoint_id approval=$approval_id"
+
+              state="unknown"; message=""
+              if [ -n "$approval_id" ] && [ "$approval_id" != "null" ]; then
+                # docs: https://learn.microsoft.com/en-us/rest/api/azure/devops/approvalsandchecks/approvals/get?view=azure-devops-rest-7.1
+                approval="$(curl -fsS "${auth[@]}" "${org}${project}/_apis/pipelines/approvals/${approval_id}?api-version=7.1")"
+                status="$(echo "$approval" | jq -r '.status')"
+                approver="$(echo "$approval" | jq -r '[.steps[]?.actualApprover.displayName, .steps[]?.assignedApprover.displayName] | map(select(. != null)) | first // "unknown approver"')"
+                modified="$(echo "$approval" | jq -r '.lastModifiedOn // ""')"
+                echo "approval status=$status approver=$approver modified=$modified"
+                case "$status" in
+                  rejected)
+                    state="rejected"; message="approval declined by ${approver} at ${modified}" ;;
+                  timedOut)
+                    state="expired"; message="approval check timed out (no response within the window) at ${modified}" ;;
+                  canceled)
+                    state="rejected"; message="approval canceled at ${modified}" ;;
+                  *)
+                    state="rejected"
+                    message="approval status '${status}' from the Approvals API did not map to rejected/expired; treating as rejected, check the Checks tab on this run" ;;
+                esac
+              else
+                state="rejected"
+                message="could not find this run's Checkpoint.Approval record via the Timeline API; falling back to the old behaviour, check the Checks tab on this run"
+              fi
+
               curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
                 -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
-                -d "{\"state\":\"rejected\",\"runUrl\":\"$(runUrl)\",\"message\":\"approval declined or timed out in Azure DevOps; Pipelines YAML cannot tell the two apart, check the Checks tab on this run\"}"
-            displayName: Callback rejected (approval declined or timed out)
-            name: callbackRejected
+                -d "$(jq -n --arg state "$state" --arg runUrl "$(runUrl)" --arg message "$message" '{state:$state, runUrl:$runUrl, message:$message}')"
+            displayName: Query Approvals API, callback rejected or expired
+            name: callbackRejectedOrExpired
             env:
               PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)

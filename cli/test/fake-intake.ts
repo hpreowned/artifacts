@@ -54,6 +54,8 @@ export class FakeIntake {
   readonly requests: Recorded[] = [];
   /** Scenario for the next jobs; tests set it before calling run(). */
   scenario: Scenario = LIVE;
+  /** Optional per-manifest override (corpus-fake.ts keys it by manifest name). */
+  scenarioFor: ((manifest: unknown) => Scenario) | undefined;
   /** forbidden: every request answers 403 like a proxy in front of the API. */
   mode: "ok" | "forbidden" = "ok";
   /** When false the 400 for a bad manifest carries no findings array. */
@@ -125,7 +127,8 @@ export class FakeIntake {
         if (this.findingsOn400) err.findings = [{ rule: "IN-006", severity: "deny", file: "manifest.json", line: 0, message: "schemaVersion must be 2" }];
         return this.send(res, 400, err);
       }
-      const job: Job = { id: jobId(), uploadToken: randomBytes(16).toString("hex"), finalized: false, polls: 0, scenario: this.scenario };
+      const scenario = this.scenarioFor?.(manifest) ?? this.scenario;
+      const job: Job = { id: jobId(), uploadToken: randomBytes(16).toString("hex"), finalized: false, polls: 0, scenario };
       this.jobs.set(job.id, job);
       return this.send(res, 201, {
         jobId: job.id,

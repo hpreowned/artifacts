@@ -14,7 +14,7 @@ here is applied by a service at run time (D12). Every `<...>` is a placeholder. 
 |---|---|---|
 | `../charts/artifacts-platform/` | namespaces, Gateway, HTTPRoutes, NetworkPolicies, mesh-root AuthorizationPolicy, ServiceAccounts, SecretProviderClasses, tls-sync, the four Deployments/Services, the Blob CSI PV/PVC | artifacts-system, artifacts-static, artifacts-dynamic (namespace/quota only), istio-system (stage 2) |
 | `../charts/tests/platform-conformance.sh` | asserts the chart's `helm template` output still carries everything the deleted raw manifests had | laptop |
-| `python-artifact/template.yaml`, `render.sh`, `test-render.sh` | DESIGN §6.6 Deployment + ConfigMap + Service + HTTPRoute per artifact | artifacts-dynamic |
+| `charts/artifact-python/` | Helm chart, one release per artifact (`art-<artifactId>`, namespace `artifacts-dynamic`): ConfigMap + DESIGN §6.6 Deployment + Service + HTTPRoute, rendered from values (`artifactId`, `appPy` via `--set-file`, `expiresAt`, `entrypoint`, `image`, `jobId`). Replaces the old `python-artifact/template.yaml` + `render.sh`. Validated offline with `helm lint` and `charts/tests/artifact-conformance.sh` (wired into `validate.sh`). | artifacts-dynamic |
 | `policy/azure-policy-assign.sh` | restricted initiative, allowed images, no capabilities, no hostPath, effect deny | cluster |
 | `policy/nodepool-untrusted.sh` | tainted `untrusted` node pool in its own subnet | cluster |
 | `validate.sh` | YAML parse of every manifest and pipeline, `bash -n` of every script, `helm lint`/`helm template`/the conformance test, the render test | laptop |
@@ -34,7 +34,7 @@ from `jfrog.corp.com`; `helm` v4.
 6. `policy/azure-policy-assign.sh`; wait up to 20 minutes; run the DESIGN §8 Phase 2 negative tests 4 and 5.
 7. The canary AuthorizationPolicy (stage 1) is already applied by step 3 — it always renders. Stage 2 (the istio-system mesh root): after the canary has run clean for a few days, re-run `helm upgrade --install` with `--set authzMeshRoot.enableRootPolicy=true` against the same values file. Rollback: re-run with it back at `false` (or omitted — that is the chart default), or `kubectl delete authorizationpolicy -n istio-system mesh-allow-only-mesh-principals`.
 
-What runs without the cluster: `validate.sh` (incl. `helm lint`, `helm template` with both `values.yaml` and `values.example.yaml`, and the conformance test), `python-artifact/test-render.sh`, both policy scripts with `--dry-run`.
+What runs without the cluster: `validate.sh` (incl. `helm lint`, `helm template` with both `values.yaml` and `values.example.yaml`, and the conformance test), `charts/tests/artifact-conformance.sh`, both policy scripts with `--dry-run`.
 
 ## Mesh root policy, audit-first without AUDIT
 
@@ -94,6 +94,6 @@ What is left needs the cluster, not more reading:
 | Istio Gateway pods under PSA `baseline`; the `infrastructure.annotations` reach the LB Service | `charts/artifacts-platform/templates/namespaces.yaml`, `gateway.yaml` | `kubectl get svc -n artifacts-system` shows an internal IP |
 | Secrets Store CSI `objectType: secret` on a Key Vault certificate yields a PEM the provider splits into `tls.key`/`tls.crt` (per the AKS ingress TLS doc); import certificates with an exportable private key | `charts/artifacts-platform/templates/secretproviderclass.yaml` | Secrets appear after step 3 |
 | `-o ro` and the v1-style blobfuse flags accepted on the fuse2 path (documented, not run); MSI auth with `allowSharedKeyAccess: false` | `charts/artifacts-platform/templates/static-gateway.yaml` | pod Ready; `kubectl exec ... touch /srv/x` fails |
-| Gateway API exact-host precedence over the wildcard route in Istio | `charts/artifacts-platform/templates/httproutes.yaml`, `python-artifact/template.yaml` | Phase 2 positive test |
+| Gateway API exact-host precedence over the wildcard route in Istio | `charts/artifacts-platform/templates/httproutes.yaml`, `charts/artifact-python/templates/httproute.yaml` | Phase 2 positive test |
 | Azure DevOps stage result strings used by the `always()` reporting job | `pipelines/artifact-python-deploy.yml` | decline one approval, read the callback |
 | ztunnel log text `policy rejection` and the metric label values in the audit procedure | this README | read one denied connection in the canary stage |

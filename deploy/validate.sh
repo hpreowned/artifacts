@@ -57,6 +57,21 @@ if [ -x "$root/charts/tests/platform-conformance.sh" ]; then
   fi
 fi
 
+if command -v helm >/dev/null 2>&1; then
+  if helm lint "$root/charts/artifact-python" >/dev/null; then
+    echo "helm lint ok  charts/artifact-python"
+  else
+    echo "helm lint FAIL  charts/artifact-python"; fail=1
+  fi
+fi
+if [ -x "$root/charts/tests/artifact-conformance.sh" ]; then
+  if "$root/charts/tests/artifact-conformance.sh"; then
+    echo "conformance ok  charts/artifact-python"
+  else
+    echo "conformance FAIL  charts/artifact-python"; fail=1
+  fi
+fi
+
 while IFS= read -r s; do
   if bash -n "$s"; then echo "sh ok     $s"; else echo "sh FAIL   $s"; fail=1; fi
 done < <(find "$root/deploy" "$root/pipelines" "$root/infra" "$root/python-runtime" -name '*.sh' 2>/dev/null | sort)

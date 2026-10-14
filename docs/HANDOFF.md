@@ -395,7 +395,7 @@ flow:
 | 4 | `kubectl apply` a pod in `artifacts-dynamic` with `image: docker.io/library/python`, then with `privileged: true` | both denied (Azure Policy, then PSA) |
 | 5 | inside a running artifact pod: `ls /var/run/secrets/kubernetes.io` | absent |
 | 6 | a non-mesh test pod (with egress allowed, since real artifact pods have none) curling a mesh service in `artifacts-dynamic` | denied by the root AuthorizationPolicy |
-| 7 | decline the approval in Azure DevOps | status shows `rejected` with the run link; T52 (open in `STATUS.md` as of this writing) makes a timeout report `expired` instead — confirm T52 landed before relying on that distinction |
+| 7 | decline the approval in Azure DevOps | status shows `rejected` with the run link; a timed-out approval reports `expired` (T52, landed) |
 
 Positive: Cowork publishes a Streamlit app, status shows `awaiting_approval` with the pipeline run link,
 approving in Azure DevOps moves it to `live`, and the GC pipeline removes it after a 10-minute TTL in a test
@@ -482,16 +482,11 @@ When you're done with a phase of work here, or periodically, bring the following
 Anything in `STATUS.md` marked `todo` as of this writing (double-check `STATUS.md` directly — this list is a
 snapshot, it will drift):
 
-- **T52** — the Azure DevOps pipeline cannot distinguish a declined approval from a timed-out one; both leave
-  the Deploy stage `Skipped`. The fix queries the Approvals REST API from the Report job with
-  `$(System.AccessToken)` and posts `expired` on timeout instead of `rejected`. Blocks the precision of M5's
-  negative test 7 above (declined vs. timed-out both currently report as `rejected`).
-- **T71** — `charts/artifacts-platform` (M7): Helm chart covering the four platform Deployments, Services,
-  routes, policies and CSI classes. If this is still `todo` when you clone, `deploy/*.yaml` raw manifests are
-  the real deployable artifact and `platform-deploy.yml` still uses `kubectl apply`, not `helm upgrade
-  --install` — read `STATUS.md`'s M7 row and this task's evidence cell before assuming Helm is in play.
-- **T72** — `charts/artifact-python` (M7) + the pipeline switch to `helm upgrade --install art-<id>` /
-  `helm uninstall` by release label; folds in T52. Same caveat as T71 if still `todo`.
+- None at hand-off time: T52, T71 and T72 all landed before this document was finalised. The pipeline
+  distinguishes a declined approval (`rejected`) from a timed-out one (`expired`) via the Approvals REST API;
+  deployment is Helm throughout (`charts/artifacts-platform` for the platform, `charts/artifact-python` per
+  artifact, raw manifests and `render.sh` retired). The Approvals Timeline record shape and the live Helm
+  rollout remain UNVERIFIED against a real Azure DevOps run and cluster — see the UNVERIFIED table.
 
 If any of these are `done` by the time you read this, trust `STATUS.md` over this list — this document is a
 snapshot from the hand-off day, not a live feed.

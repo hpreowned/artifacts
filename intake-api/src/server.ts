@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Config } from "./config.js";
+import type { EntraTokenVerifier } from "./entra-token.js";
 import { HttpError, sendJson } from "./http.js";
 import { JOB_ID_RE } from "./ids.js";
 import { createViewToken, postPublishEvent } from "./routes/internal.js";
@@ -11,6 +12,8 @@ export interface AppDeps {
   cfg: Config;
   stores: Stores;
   now: () => Date;
+  /** Verifies Entra bearer tokens for beginPublish/getPublishStatus; unused (and may be omitted) under DEV_AUTH=1. */
+  entraVerifier?: EntraTokenVerifier;
 }
 
 type Handler = (req: IncomingMessage, res: ServerResponse, deps: AppDeps, jobId: string) => Promise<void>;

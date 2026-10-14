@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
 import { loadConfig, type Config } from "../config.js";
+import type { EntraTokenVerifier } from "../entra-token.js";
 import type { Manifest } from "../job.js";
 import { createApp } from "../server.js";
 import { MemoryScanQueue } from "../stores/memory.js";
@@ -24,7 +25,7 @@ export interface Api {
   stop(): Promise<void>;
 }
 
-export async function startApi(env: Record<string, string> = {}): Promise<Api> {
+export async function startApi(env: Record<string, string> = {}, entraVerifier?: EntraTokenVerifier): Promise<Api> {
   const pipelineToken = randomBytes(24).toString("base64url");
   const internalKey = randomBytes(24).toString("base64url");
   const viewKey = randomBytes(32);
@@ -34,7 +35,7 @@ export async function startApi(env: Record<string, string> = {}): Promise<Api> {
   });
   const stores = createStores(cfg);
   const clock = { now: new Date() };
-  const server = createApp({ cfg, stores, now: () => clock.now });
+  const server = createApp({ cfg, stores, now: () => clock.now, entraVerifier });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
   return {

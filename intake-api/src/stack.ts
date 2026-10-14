@@ -8,6 +8,7 @@ import { FakePipelineTrigger, postAwaitingApproval } from "../../scanner/src/pip
 import { workerOptions } from "../../scanner/src/select.js";
 import { startWorker } from "../../scanner/src/worker.js";
 import type { Config } from "./config.js";
+import { createEntraTokenVerifier } from "./entra-token.js";
 import { startExpirySweeper } from "./expiry.js";
 import { createApp } from "./server.js";
 import { createStores } from "./stores/select.js";
@@ -28,7 +29,8 @@ export async function startLocalStack(cfg: Config, port: number = cfg.port): Pro
   if (cfg.backend !== "memory") throw new Error("the local stack runs on BACKEND=memory only");
   if (!cfg.pipelineToken) throw new Error("the local stack needs PIPELINE_TOKEN so the fake pipeline can call /events");
   const stores = createStores(cfg);
-  const server = createApp({ cfg, stores, now: () => new Date() });
+  const entraVerifier = cfg.devAuth ? undefined : createEntraTokenVerifier({ tenantId: cfg.entraTenantId!, audience: cfg.entraAudience!, requiredScope: cfg.entraRequiredScope });
+  const server = createApp({ cfg, stores, now: () => new Date(), entraVerifier });
   await new Promise<void>((resolve, reject) => server.listen(port, "127.0.0.1").once("listening", resolve).once("error", reject));
   const bound = (server.address() as AddressInfo).port;
   const baseUrl = `http://localhost:${bound}`;

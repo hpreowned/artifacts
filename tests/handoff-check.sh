@@ -121,6 +121,10 @@ if [ -d "$ROOT/charts" ]; then
     else
       for c in "${charts[@]}"; do
         name="$(basename "$c")"
+        if [ ! -f "$c/Chart.yaml" ]; then
+          ok "charts/$name: no Chart.yaml, not a chart (skipped)"
+          continue
+        fi
         if helm lint "$c" >/tmp/handoff-check.$$ 2>&1; then
           ok "helm lint charts/$name"
         else

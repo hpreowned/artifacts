@@ -417,7 +417,7 @@ Plus one custom connector, added once by a Claude org Owner. Two channels, two a
 
 | Channel | Who calls | Auth | Notes |
 |---|---|---|---|
-| A. Tool calls | Anthropic's connector service → App Gateway → APIM → intake-api | Entra OAuth, user-delegated, validated by APIM on every call | Token held server-side by Anthropic. Never enters the sandbox. The user's `oid` reaches intake-api as a header set by APIM. |
+| A. Tool calls | Anthropic's connector service → App Gateway → APIM → intake-api | Entra OAuth, user-delegated, validated by APIM on every call and verified again by intake-api from the forwarded bearer | Token held server-side by Anthropic. Never enters the sandbox. intake-api reads the user's `oid` and `upn` from the token's claims; nothing between APIM and intake-api carries a secret. |
 | B. Upload + finalize | `upload.sh` in the Cowork sandbox → App Gateway → APIM → intake-api | One-time job-bound bearer token minted in channel A | Entra is impossible here: no identity in the sandbox. The token is a capability: 10 min, single use, size-capped, one job. |
 
 Both endpoints must be **reachable from outside your network**. "Internal-only" applies to viewing, not to the publish path. Claude also rejects connector hostnames that resolve to private IPs, so `mcp.corp.com` needs a public DNS record pointing at the App Gateway.
@@ -642,7 +642,7 @@ Per-artifact CSP script hashes; per-user quotas; audit log of who published and 
 | Microsoft-hosted agent on the pipeline | Deploy stage cannot reach the private API server or Blob | Pin the pipeline to your VNet pool |
 | Approval check timeout left at the default | Stale runs sit for 30 days | Set the Environment check timeout to 7 days; the callback marks the job `expired` |
 | Pipeline queue latency | A Python publish takes 2 to 3 minutes to reach `awaiting_approval` | Expected; the human wait dominates. Static artifacts are unaffected |
-| intake-api trusts `X-Publisher-*` headers from anything that reaches it | A caller inside the VNet that can reach the Gateway's `intake` listener publishes as any user by setting two headers | APIM is the only intended caller. Until mTLS between APIM and the Gateway exists, APIM adds `X-Gateway-Key: {{gateway-shared-key}}` and intake-api rejects public routes without it (T18); NetworkPolicy on `artifacts-system` admits intake traffic only from the Gateway pods (found by the runbook agent, 2026-10-14) |
+| intake-api trusts `X-Publisher-*` headers from anything that reaches it | A caller inside the VNet that can reach the Gateway's `intake` listener publishes as any user by setting two headers | intake-api verifies the forwarded Entra bearer itself (signature against the tenant JWKS, issuer, audience, expiry) and derives oid/upn from the claims; headers are ignored. No shared key, no extra secret: the user's decision. APIM stays the authorization point. NetworkPolicy on `artifacts-system` admits intake traffic only from the Gateway, worker and shell pods (T18) |
 | TTL deletes a demo mid-meeting | "The link died" | TTL is explicit in the manifest and in the `live` response; add `artifactctl extend` |
 | Phishing page passes every scan | A colleague types a password into it | Password inputs are rejected; forms cannot post anywhere; the shell shows a persistent "AI-generated artifact, never enter credentials" banner above the frame |
 

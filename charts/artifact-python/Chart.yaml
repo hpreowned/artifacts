@@ -1,0 +1,6 @@
+apiVersion: v2
+name: artifact-python
+description: One rendered release per Python artifact (DESIGN §6.6, §6.12, D13). ConfigMap + Deployment + Service + HTTPRoute, release name art-<artifactId>, namespace artifacts-dynamic.
+type: application
+version: 0.1.0
+appVersion: "1"

@@ -1,0 +1,11 @@
+{{- include "artifact-python.validate" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "artifact-python.fullname" . }}-code
+  namespace: artifacts-dynamic
+  labels:
+    {{- include "artifact-python.labels" . | nindent 4 }}
+data:
+  app.py: |
+{{ .Values.appPy | indent 4 }}

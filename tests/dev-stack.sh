@@ -16,24 +16,30 @@ export DEV_AUTH=1 SERVE_ROOT="$L/serving" PUBLIC_BASE_URL=http://localhost:8080 
 export ARTIFACT_DOMAIN=localhost:8081 ARTIFACT_SCHEME=http INTAKE_INTERNAL_URL=http://localhost:8080 DEV_INSECURE_COOKIES=1
 export RUNTIME_MANIFEST="$ROOT/tests/runtime-manifest.python-1.json"
 pidfile="$L/pids"
+PORTS="8080 8081 8082"
+listeners() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null || true; }
 case "${1:-start}" in
   env) cat "$ENV" ;;
   start)
-    [ -f "$pidfile" ] && { echo "already running (pids in $pidfile); run stop first"; exit 1; }
+    for port in $PORTS; do [ -z "$(listeners "$port")" ] || { echo "port $port already bound; run stop first"; exit 1; }; done
+    [ -f "$pidfile" ] && { echo "stale pid file $pidfile; run stop first"; exit 1; }
     for d in intake-api static-gateway viewer-shell; do [ -d "$ROOT/$d/node_modules" ] || npm --prefix "$ROOT/$d" ci --silent; done
     ( cd "$ROOT/intake-api"     && PORT=8080 exec nohup npm run -s dev ) > "$L/logs/intake.log"  2>&1 & echo $! >  "$pidfile"; disown
     ( cd "$ROOT/static-gateway" && PORT=8081 exec nohup npm run -s dev ) > "$L/logs/gateway.log" 2>&1 & echo $! >> "$pidfile"; disown
     ( cd "$ROOT/viewer-shell"   && PORT=8082 exec nohup npm run -s dev ) > "$L/logs/shell.log"   2>&1 & echo $! >> "$pidfile"; disown
-    for p in 8080 8081 8082; do curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://localhost:$p/" || true; done
+    for p in $PORTS; do curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://localhost:$p/" || true; done
     echo "started: intake 8080, gateway 8081, shell 8082; logs in $L/logs; env in $ENV"
     ;;
   stop)
-    [ -f "$pidfile" ] || { echo "not running"; exit 0; }
-    while read -r pid; do pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; done < "$pidfile"
-    rm -f "$pidfile"; echo "stopped"
+    # npm wraps node; killing the wrapper leaves the listener alive. Kill listeners by port, then the wrappers.
+    for port in $PORTS; do for pid in $(listeners "$port"); do kill "$pid" 2>/dev/null || true; done; done
+    if [ -f "$pidfile" ]; then while read -r pid; do pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; done < "$pidfile"; fi
+    rm -f "$pidfile"
+    for port in $PORTS; do [ -z "$(listeners "$port")" ] || { echo "port $port still bound"; exit 1; }; done
+    echo "stopped"
     ;;
   status)
-    for p in 8080 8081 8082; do printf "%s: " "$p"; curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:$p/" || echo down; done
+    for p in $PORTS; do printf "%s: " "$p"; curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:$p/" || echo down; done
     ;;
   *) echo "usage: $0 start|stop|status|env"; exit 1 ;;
 esac

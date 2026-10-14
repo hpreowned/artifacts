@@ -1,0 +1,116 @@
+# intake-api (agent-intake's code, DESIGN §3). No Kubernetes RBAC, no secrets in the manifest.
+# Environment variable names below are this directory's expectation of intake-api/README.md; reconcile at M2.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intake-api
+  namespace: artifacts-system
+  labels:
+    app.kubernetes.io/name: intake-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: intake-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: intake-api
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: intake-api
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: intake-api
+          image: jfrog.corp.com/artifacts/intake-api:<tag>
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: BACKEND
+              value: azure            # anything else selects the in-memory implementations (CLAUDE.md)
+            - name: STORAGE_ACCOUNT
+              value: "<storage-account>"
+            - name: INTAKE_CONTAINER
+              value: intake
+            - name: JOBS_CONTAINER
+              value: jobs
+            - name: SERVICEBUS_NAMESPACE
+              value: "<servicebus-namespace>.servicebus.windows.net"
+            - name: SCAN_QUEUE
+              value: artifact-scan
+            - name: PUBLIC_API_URL      # base of the uploadUrl returned by beginPublish (through APIM)
+              value: https://mcp.corp.com/artifacts
+            - name: SHELL_URL
+              value: https://artifacts.corp.com
+            - name: ARTIFACT_DOMAIN
+              value: corp-artifacts.net
+            - name: MAX_UPLOAD_BYTES
+              value: "26214400"
+          envFrom:
+            - secretRef:
+                name: intake-api-secrets   # VIEW_TOKEN_KEY, PIPELINE_TOKEN, INTERNAL_SHARED_KEY
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets
+              mountPath: /mnt/secrets
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: secrets
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: intake-api-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: intake-api
+  namespace: artifacts-system
+  labels:
+    app.kubernetes.io/name: intake-api
+spec:
+  selector:
+    app.kubernetes.io/name: intake-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

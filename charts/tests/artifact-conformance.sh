@@ -55,6 +55,7 @@ for d in docs:
     assert labels["app.kubernetes.io/managed-by"] == "Helm", labels
 
 dep = kinds["Deployment"]
+assert dep["metadata"]["annotations"]["artifacts.corp.com/expires-at"] == "2026-11-01T00-00-00Z", dep["metadata"]
 pod = dep["spec"]["template"]["spec"]
 c = pod["containers"][0]
 

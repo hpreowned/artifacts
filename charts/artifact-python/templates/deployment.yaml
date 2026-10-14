@@ -6,6 +6,11 @@ metadata:
   namespace: artifacts-dynamic
   labels:
     {{- include "artifact-python.labels" . | nindent 4 }}
+  # Release-level expiry, readable by `helm get manifest art-<id> -n artifacts-dynamic` so artifact-gc.yml
+  # does not have to query pods or labels to find it (T72). Same value as the label above, in annotation
+  # form because `helm get metadata` does not surface per-release custom data, only chart-level fields.
+  annotations:
+    artifacts.corp.com/expires-at: {{ include "artifact-python.expiresAtLabel" . | quote }}
 spec:
   replicas: 1
   selector:

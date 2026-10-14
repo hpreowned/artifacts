@@ -1,7 +1,9 @@
 <!-- Operation scope for PUT /v1/publish/{jobId}/upload and POST /v1/publish/{jobId}/finalize.
      No Entra validation: the bearer is the one-time upload token and intake-api validates it.
-     32 MiB request cap (33554432 bytes), rate limit keyed on the bearer token, caller-supplied
-     X-Publisher-* headers stripped so only APIM-set identity reaches intake-api. -->
+     32 MiB request cap (33554432 bytes), rate limit keyed on the bearer token. T18: intake-api never
+     reads X-Publisher-* headers at all any more (identity on these two routes comes from the job the
+     authenticated beginPublish call already created, bound to the uploadToken); the delete below is
+     defense in depth so a caller cannot smuggle values for a header nothing trusts. -->
 <policies>
   <inbound>
     <base />

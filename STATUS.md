@@ -71,6 +71,7 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 - 2026-10-14 One shared namespace for the Python tier, not one per artifact.
 - 2026-10-14 LLM review stage: recommended as deny-or-escalate only, with an eval corpus; **decision pending**. `static-injection` is in the corpus for it already.
 - 2026-10-14 Progress tracking lives in this file in git; Azure DevOps Boards mirrors milestones only.
+- 2026-10-14 Gateway session cookie is `SameSite=None; Partitioned`, not `Strict`: the artifact origin is cross-site to the shell by design. DESIGN §6.4 corrected (agent-serve finding).
 
 ## Daily log (append-only, one line per day)
 

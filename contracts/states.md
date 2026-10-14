@@ -14,7 +14,7 @@ One job per `beginPublish`. One artifact id per job. States and who moves them:
 | scanning | failed | scanner worker | python job: `runUrl` set but no `/events` callback within `PIPELINE_TIMEOUT_HOURS` (default 24) |
 | awaiting_approval | deploying | pipeline via /events | approval granted |
 | awaiting_approval | rejected | pipeline via /events | approval declined |
-| awaiting_approval | expired | pipeline via /events | approval check timed out (7 days) |
+| awaiting_approval | expired | pipeline via /events | approval check timed out (7 days) | Note: until T52, the pipeline posts `rejected` for a timeout too, with a message pointing at the Checks tab, because Azure DevOps exposes both as a skipped stage. |
 | deploying | live | scanner worker (static) / pipeline via /events (python) | files in serving/ (static); rollout healthy (python) |
 | deploying | failed | scanner worker / pipeline | copy or rollout error |
 | live | expired | artifact-gc pipeline via /events (python) / scanner worker GC (static) | TTL reached |

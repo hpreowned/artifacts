@@ -47,21 +47,25 @@ stages:
           matrix:
             intake-api:
               name: intake-api
+              context: '.'          # intake-api/tsconfig.json compiles ../scanner/src too; Dockerfile expects the repo root
               buildArgs: ''
             scanner:
               name: scanner
+              context: '.'          # scanner imports intake-api modules; repo-root context
               buildArgs: '--build-arg GITLEAKS_VERSION=$(GITLEAKS_VERSION) --build-arg GITLEAKS_SHA256=$(GITLEAKS_SHA256)'
             static-gateway:
               name: static-gateway
+              context: 'static-gateway/'
               buildArgs: ''
             viewer-shell:
               name: viewer-shell
+              context: 'viewer-shell/'
               buildArgs: ''
         steps:
           - checkout: self
           - script: |
               set -euo pipefail
-              docker build --pull $(buildArgs) -t "$(registry)/$(name):$(tag)" "$(name)/"
+              docker build --pull $(buildArgs) -f "$(name)/Dockerfile" -t "$(registry)/$(name):$(tag)" "$(context)"
               docker push "$(registry)/$(name):$(tag)"
               docker image inspect --format '{{index .RepoDigests 0}}' "$(registry)/$(name):$(tag)"
             displayName: docker build and push $(name)

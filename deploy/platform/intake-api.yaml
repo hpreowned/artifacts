@@ -53,9 +53,11 @@ spec:
               value: artifact-scan     # must equal scanner-worker's SCAN_QUEUE: same queue, enqueuer and consumer
             - name: SHELL_ORIGIN       # live artifact URL is ${SHELL_ORIGIN}/view/${artifactId}
               value: https://artifacts.corp.com
+            - name: PUBLIC_BASE_URL    # what clients see through App Gateway + APIM; uploadUrl is built from it
+              value: https://mcp.corp.com/artifacts
           envFrom:
             - secretRef:
-                name: intake-api-secrets   # VIEW_TOKEN_KEY, PIPELINE_TOKEN, INTERNAL_SHARED_KEY, PUBLIC_BASE_URL
+                name: intake-api-secrets   # VIEW_TOKEN_KEY, PIPELINE_TOKEN, INTERNAL_SHARED_KEY
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

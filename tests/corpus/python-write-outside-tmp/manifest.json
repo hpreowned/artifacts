@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 2,
+  "name": "py-write",
+  "tier": "python",
+  "runtime": "python-1",
+  "entrypoint": "app.py",
+  "externalScripts": [],
+  "ttlDays": 14,
+  "generatedBy": {
+    "tool": "artifactctl",
+    "model": "test-corpus",
+    "session": "corpus"
+  }
+}

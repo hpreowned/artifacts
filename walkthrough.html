@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/11.12.0/mermaid.min.js"></script>
+</head>
+<body>
+<title>Publish-to-AKS Walkthrough</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400&display=swap">
+<style>
+:root {
+  --bg:#F6F8FB; --surface:#FFFFFF; --ink:#14213D; --muted:#5B6578; --line:#D8DEE8;
+  --accent:#0E7C7B; --accent-ink:#0B5F5E; --amber:#B7791F; --paper:#FBFCFE; --paper-line:#D8DEE8;
+  --code-bg:#EEF2F7; --code-ink:#1F2A44;
+  --display:"Archivo","Segoe UI",Helvetica,Arial,sans-serif;
+  --body:"Source Sans 3","Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0F1521; --surface:#171E2C; --ink:#E6EAF2; --muted:#9AA5B8; --line:#2A3447;
+    --accent:#3FB5B3; --accent-ink:#7FD3D1; --amber:#D9A441; --paper:#FBFCFE; --paper-line:#2A3447;
+    --code-bg:#0B1018; --code-ink:#D5DBE6;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0F1521; --surface:#171E2C; --ink:#E6EAF2; --muted:#9AA5B8; --line:#2A3447;
+  --accent:#3FB5B3; --accent-ink:#7FD3D1; --amber:#D9A441; --paper:#FBFCFE; --paper-line:#2A3447;
+  --code-bg:#0B1018; --code-ink:#D5DBE6;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--body); font-size:17px; line-height:1.55; }
+a { color:var(--accent-ink); }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.wrap { max-width:1120px; margin:0 auto; padding:40px 24px 80px; }
+.masthead { display:grid; gap:12px; max-width:72ch; margin-bottom:36px; }
+.eyebrow { font-family:var(--display); font-weight:600; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-ink); }
+h1 { font-family:var(--display); font-weight:700; font-size:clamp(32px,4.5vw,46px); line-height:1.08; margin:0; text-wrap:balance; letter-spacing:-.01em; }
+.lede { font-size:19px; color:var(--muted); margin:0; max-width:62ch; }
+.glance { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); margin:0 0 40px; }
+.tile { background:var(--surface); padding:16px 16px 14px; display:grid; gap:4px; }
+.tile .num { font-family:var(--display); font-weight:700; font-size:28px; line-height:1; font-variant-numeric:tabular-nums; color:var(--ink); }
+.tile .lab { font-size:14px; color:var(--muted); line-height:1.3; }
+nav.toc { margin:0 0 48px; }
+nav.toc ol { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:8px 24px; }
+nav.toc a { display:flex; gap:12px; align-items:baseline; text-decoration:none; color:var(--ink); padding:6px 0; border-bottom:1px solid var(--line); }
+nav.toc a:hover { color:var(--accent-ink); }
+nav.toc .n { font-family:var(--display); font-weight:600; font-size:13px; color:var(--accent-ink); min-width:1.4em; font-variant-numeric:tabular-nums; }
+.fig { display:grid; gap:16px; padding:40px 0; border-top:1px solid var(--line); }
+.fig-head { display:grid; gap:6px; max-width:72ch; }
+.fig h2 { font-family:var(--display); font-weight:600; font-size:28px; line-height:1.15; margin:0; text-wrap:balance; }
+.claim { margin:0; font-size:18px; font-weight:600; color:var(--ink); }
+.body { margin:0; max-width:72ch; color:var(--muted); }
+figure { margin:0; display:grid; gap:10px; }
+.sheet { background:var(--paper); border:1px solid var(--paper-line); padding:20px 16px; overflow-x:auto; }
+.sheet .mermaid { margin:0; font-family:var(--body); color:#14213D; min-height:80px; }
+.sheet svg { max-width:100%; height:auto; }
+figcaption { font-size:14px; color:var(--muted); }
+details.src { border:1px solid var(--line); background:var(--surface); }
+details.src summary { cursor:pointer; padding:10px 14px; font-family:var(--display); font-weight:600; font-size:14px; display:flex; gap:12px; align-items:baseline; }
+details.src summary .hint { font-family:var(--body); font-weight:400; color:var(--muted); }
+.src-wrap { position:relative; border-top:1px solid var(--line); }
+.src-wrap pre { margin:0; padding:16px 14px; background:var(--code-bg); color:var(--code-ink); font-family:var(--mono); font-size:13px; line-height:1.5; overflow-x:auto; }
+button.copy { position:absolute; top:8px; right:8px; font-family:var(--display); font-weight:600; font-size:12px; letter-spacing:.06em; text-transform:uppercase; padding:6px 10px; border:1px solid var(--line); background:var(--surface); color:var(--ink); cursor:pointer; }
+button.copy:hover { border-color:var(--accent); color:var(--accent-ink); }
+.roles { padding:40px 0 0; border-top:1px solid var(--line); display:grid; gap:16px; }
+.roles h2 { font-family:var(--display); font-weight:600; font-size:28px; margin:0; }
+.table-wrap { overflow-x:auto; border:1px solid var(--line); }
+table { border-collapse:collapse; width:100%; min-width:720px; background:var(--surface); font-size:15px; }
+th, td { text-align:left; vertical-align:top; padding:10px 12px; border-bottom:1px solid var(--line); }
+th { font-family:var(--display); font-weight:600; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); background:var(--bg); }
+tr:last-child td { border-bottom:0; }
+td:first-child { font-weight:600; white-space:nowrap; }
+.foot { margin-top:48px; padding-top:20px; border-top:1px solid var(--line); font-size:14px; color:var(--muted); max-width:72ch; }
+@media (prefers-reduced-motion: no-preference) { details.src summary { transition:color .15s; } }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <span class="eyebrow">Idea 2 · operations walkthrough · 2026-10-14</span>
+    <h1>Publish-to-AKS Walkthrough</h1>
+    <p class="lede">How an employee publishes a Cowork artifact to the internal cluster, who is involved, and what happens behind the scenes. Every diagram is Mermaid. Open the source under each one to copy it.</p>
+  </header>
+
+  <div class="glance" aria-label="At a glance">
+<div class="tile"><div class="num">4</div><div class="lab">human roles in the loop</div></div>
+<div class="tile"><div class="num">1</div><div class="lab">public hostname, the APIM front door</div></div>
+<div class="tile"><div class="num">30 s</div><div class="lab">about, from upload to live for a static artifact</div></div>
+<div class="tile"><div class="num">1</div><div class="lab">human approval per Python app</div></div>
+<div class="tile"><div class="num">0</div><div class="lab">container images built per artifact</div></div>
+<div class="tile"><div class="num">1</div><div class="lab">open-source binary in the scanner, gitleaks</div></div>
+<div class="tile"><div class="num">14 d</div><div class="lab">default TTL, 90 d maximum</div></div>
+  </div>
+
+  <nav class="toc" aria-label="Figures">
+    <ol>
+<li><a href="#actors"><span class="n">1</span>Who is involved</a></li>
+<li><a href="#publisher"><span class="n">2</span>What the publisher experiences</a></li>
+<li><a href="#publish"><span class="n">3</span>Behind the scenes: publish and scan</a></li>
+<li><a href="#deploy"><span class="n">4</span>Behind the scenes: going live</a></li>
+<li><a href="#viewer"><span class="n">5</span>What the viewer experiences</a></li>
+<li><a href="#states"><span class="n">6</span>The life of one publish job</a></li>
+<li><a href="#containment"><span class="n">7</span>If a bad artifact gets through the scanner</a></li>
+      <li><a href="#roles"><span class="n">+</span>Who does what</a></li>
+    </ol>
+  </nav>
+
+
+<section class="fig" id="actors">
+  <header class="fig-head">
+    <span class="eyebrow">Figure 1</span>
+    <h2>Who is involved</h2>
+    <p class="claim">Seventeen actors, four of them people, in five layers. Everything inside the private cluster is invisible to the publisher; they talk only to Cowork.</p>
+  </header>
+  <p class="body">Management version: an employee asks Cowork to publish. Cowork does the packaging and talks to one front door. Behind that door, the platform scans and decides. Static pages go straight to hosting. Python apps go through the same Azure DevOps pipeline and approval flow every other deployment in the organisation already uses. A colleague opens a link and signs in with their normal corporate account.</p>
+  <figure>
+    <div class="sheet"><pre class="mermaid">%%{init: {&#x27;theme&#x27;:&#x27;base&#x27;,&#x27;themeVariables&#x27;:{&#x27;fontFamily&#x27;:&#x27;Source Sans 3, Segoe UI, Helvetica, Arial, sans-serif&#x27;,&#x27;fontSize&#x27;:&#x27;14px&#x27;,&#x27;primaryColor&#x27;:&#x27;#E6F1F1&#x27;,&#x27;primaryTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;primaryBorderColor&#x27;:&#x27;#0E7C7B&#x27;,&#x27;lineColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;secondaryColor&#x27;:&#x27;#F5EBD6&#x27;,&#x27;tertiaryColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;actorBkg&#x27;:&#x27;#E6F1F1&#x27;,&#x27;actorBorder&#x27;:&#x27;#0E7C7B&#x27;,&#x27;actorTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;actorLineColor&#x27;:&#x27;#B9C2D0&#x27;,&#x27;signalColor&#x27;:&#x27;#14213D&#x27;,&#x27;signalTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBkgColor&#x27;:&#x27;#FFF3DB&#x27;,&#x27;noteTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBorderColor&#x27;:&#x27;#B7791F&#x27;,&#x27;labelBoxBkgColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;labelBoxBorderColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;labelTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;loopTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;altBackground&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBkg&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBorder&#x27;:&#x27;#B9C2D0&#x27;,&#x27;edgeLabelBackground&#x27;:&#x27;#FFFFFF&#x27;,&#x27;titleColor&#x27;:&#x27;#14213D&#x27;}}}%%
+flowchart TB
+  subgraph people [&quot;People&quot;]
+    PUB[&quot;Publisher&lt;br/&gt;an employee using Cowork&quot;]
+    APR[&quot;Approver&lt;br/&gt;member of the artifacts-approvers group&quot;]
+    VIEW[&quot;Viewer&lt;br/&gt;a colleague with the link&quot;]
+    PLAT[&quot;Platform team&lt;br/&gt;runs pipeline, policies, runtime image, skill&quot;]
+  end
+  subgraph claude [&quot;Claude side, operated by Anthropic&quot;]
+    COWORK[&quot;Cowork agent&lt;br/&gt;loads the publish-to-aks skill&quot;]
+    SANDBOX[&quot;Cowork sandbox&lt;br/&gt;runs upload.sh&quot;]
+    CONN[&quot;Connector service&lt;br/&gt;makes the MCP tool calls&quot;]
+  end
+  subgraph edge [&quot;Azure edge: the only public surface&quot;]
+    APPGW[&quot;Application Gateway WAF&quot;]
+    APIM[&quot;API Management&lt;br/&gt;MCP server, Entra validation, rate limits&quot;]
+    ENTRA[&quot;Entra ID&quot;]
+  end
+  subgraph cicd [&quot;Azure DevOps, your existing CI/CD&quot;]
+    ADO[&quot;Pipeline artifact-python-deploy&lt;br/&gt;gitleaks policy, Sonar advisory, Environment approval,&lt;br/&gt;kubectl apply via the AKS service connection&quot;]
+  end
+  subgraph aks [&quot;Private AKS cluster&quot;]
+    INTAKE[&quot;Intake API&lt;br/&gt;orchestrates every job&quot;]
+    SCAN[&quot;Scanner worker&lt;br/&gt;gitleaks, rule checks, import allowlist, verdict&quot;]
+    STATIC[&quot;Static gateway&lt;br/&gt;serves HTML artifacts&quot;]
+    DYN[&quot;Python runtime pods&lt;br/&gt;no network, no identity&quot;]
+    SHELL[&quot;Viewer shell&lt;br/&gt;Entra sign-in, audit log, iframe&quot;]
+  end
+  BLOB[(&quot;Blob Storage&lt;br/&gt;intake, serving, job state&lt;br/&gt;Defender for Storage malware scan on upload&quot;)]
+
+  PUB --&gt;|&quot;publish this internally&quot;| COWORK
+  COWORK --&gt;|&quot;tool call&quot;| CONN
+  COWORK --&gt;|&quot;runs script&quot;| SANDBOX
+  CONN --&gt;|&quot;HTTPS, Entra token&quot;| APPGW
+  SANDBOX --&gt;|&quot;HTTPS, one-time token&quot;| APPGW
+  APPGW --&gt; APIM
+  APIM -.-&gt;|&quot;validates token&quot;| ENTRA
+  APIM --&gt; INTAKE
+  INTAKE --&gt;|&quot;queues scan&quot;| SCAN
+  INTAKE --&gt; BLOB
+  SCAN --&gt; BLOB
+  SCAN --&gt;|&quot;static: copy to serving&quot;| STATIC
+  SCAN --&gt;|&quot;python: trigger pipeline run&quot;| ADO
+  ADO --&gt;|&quot;after approval, applies manifests&quot;| DYN
+  APR --&gt;|&quot;approves in Azure DevOps&quot;| ADO
+  VIEW --&gt;|&quot;opens share link&quot;| SHELL
+  SHELL -.-&gt;|&quot;sign-in&quot;| ENTRA
+  SHELL --&gt;|&quot;iframe&quot;| STATIC
+  SHELL --&gt;|&quot;iframe&quot;| DYN
+  PLAT -.-&gt;|&quot;operates&quot;| aks</pre></div>
+    <figcaption>Figure 1. Seventeen actors, four of them people, in five layers. Everything inside the private cluster is invisible to the publisher; they talk only to Cowork.</figcaption>
+  </figure>
+  <details class="src">
+    <summary>Mermaid source <span class="hint">copy and paste into any Mermaid renderer</span></summary>
+    <div class="src-wrap">
+      <button class="copy" type="button" data-copy="src-actors">Copy</button>
+      <pre id="src-actors"><code>flowchart TB
+  subgraph people [&quot;People&quot;]
+    PUB[&quot;Publisher&lt;br/&gt;an employee using Cowork&quot;]
+    APR[&quot;Approver&lt;br/&gt;member of the artifacts-approvers group&quot;]
+    VIEW[&quot;Viewer&lt;br/&gt;a colleague with the link&quot;]
+    PLAT[&quot;Platform team&lt;br/&gt;runs pipeline, policies, runtime image, skill&quot;]
+  end
+  subgraph claude [&quot;Claude side, operated by Anthropic&quot;]
+    COWORK[&quot;Cowork agent&lt;br/&gt;loads the publish-to-aks skill&quot;]
+    SANDBOX[&quot;Cowork sandbox&lt;br/&gt;runs upload.sh&quot;]
+    CONN[&quot;Connector service&lt;br/&gt;makes the MCP tool calls&quot;]
+  end
+  subgraph edge [&quot;Azure edge: the only public surface&quot;]
+    APPGW[&quot;Application Gateway WAF&quot;]
+    APIM[&quot;API Management&lt;br/&gt;MCP server, Entra validation, rate limits&quot;]
+    ENTRA[&quot;Entra ID&quot;]
+  end
+  subgraph cicd [&quot;Azure DevOps, your existing CI/CD&quot;]
+    ADO[&quot;Pipeline artifact-python-deploy&lt;br/&gt;gitleaks policy, Sonar advisory, Environment approval,&lt;br/&gt;kubectl apply via the AKS service connection&quot;]
+  end
+  subgraph aks [&quot;Private AKS cluster&quot;]
+    INTAKE[&quot;Intake API&lt;br/&gt;orchestrates every job&quot;]
+    SCAN[&quot;Scanner worker&lt;br/&gt;gitleaks, rule checks, import allowlist, verdict&quot;]
+    STATIC[&quot;Static gateway&lt;br/&gt;serves HTML artifacts&quot;]
+    DYN[&quot;Python runtime pods&lt;br/&gt;no network, no identity&quot;]
+    SHELL[&quot;Viewer shell&lt;br/&gt;Entra sign-in, audit log, iframe&quot;]
+  end
+  BLOB[(&quot;Blob Storage&lt;br/&gt;intake, serving, job state&lt;br/&gt;Defender for Storage malware scan on upload&quot;)]
+
+  PUB --&gt;|&quot;publish this internally&quot;| COWORK
+  COWORK --&gt;|&quot;tool call&quot;| CONN
+  COWORK --&gt;|&quot;runs script&quot;| SANDBOX
+  CONN --&gt;|&quot;HTTPS, Entra token&quot;| APPGW
+  SANDBOX --&gt;|&quot;HTTPS, one-time token&quot;| APPGW
+  APPGW --&gt; APIM
+  APIM -.-&gt;|&quot;validates token&quot;| ENTRA
+  APIM --&gt; INTAKE
+  INTAKE --&gt;|&quot;queues scan&quot;| SCAN
+  INTAKE --&gt; BLOB
+  SCAN --&gt; BLOB
+  SCAN --&gt;|&quot;static: copy to serving&quot;| STATIC
+  SCAN --&gt;|&quot;python: trigger pipeline run&quot;| ADO
+  ADO --&gt;|&quot;after approval, applies manifests&quot;| DYN
+  APR --&gt;|&quot;approves in Azure DevOps&quot;| ADO
+  VIEW --&gt;|&quot;opens share link&quot;| SHELL
+  SHELL -.-&gt;|&quot;sign-in&quot;| ENTRA
+  SHELL --&gt;|&quot;iframe&quot;| STATIC
+  SHELL --&gt;|&quot;iframe&quot;| DYN
+  PLAT -.-&gt;|&quot;operates&quot;| aks</code></pre>
+    </div>
+  </details>
+</section>
+<section class="fig" id="publisher">
+  <header class="fig-head">
+    <span class="eyebrow">Figure 2</span>
+    <h2>What the publisher experiences</h2>
+    <p class="claim">Four steps for a static artifact, five for a Python app. The publisher never leaves Cowork.</p>
+  </header>
+  <p class="body">The employee&#x27;s whole experience is a conversation. Cowork packages the work, uploads it, waits for the verdict, and either hands back a share link with an expiry date, names the people who need to approve, or fixes what the scanner flagged and tries again. Nobody opens a portal, a ticket, or a terminal.</p>
+  <figure>
+    <div class="sheet"><pre class="mermaid">%%{init: {&#x27;theme&#x27;:&#x27;base&#x27;,&#x27;themeVariables&#x27;:{&#x27;fontFamily&#x27;:&#x27;Source Sans 3, Segoe UI, Helvetica, Arial, sans-serif&#x27;,&#x27;fontSize&#x27;:&#x27;14px&#x27;,&#x27;primaryColor&#x27;:&#x27;#E6F1F1&#x27;,&#x27;primaryTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;primaryBorderColor&#x27;:&#x27;#0E7C7B&#x27;,&#x27;lineColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;secondaryColor&#x27;:&#x27;#F5EBD6&#x27;,&#x27;tertiaryColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;actorBkg&#x27;:&#x27;#E6F1F1&#x27;,&#x27;actorBorder&#x27;:&#x27;#0E7C7B&#x27;,&#x27;actorTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;actorLineColor&#x27;:&#x27;#B9C2D0&#x27;,&#x27;signalColor&#x27;:&#x27;#14213D&#x27;,&#x27;signalTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBkgColor&#x27;:&#x27;#FFF3DB&#x27;,&#x27;noteTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBorderColor&#x27;:&#x27;#B7791F&#x27;,&#x27;labelBoxBkgColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;labelBoxBorderColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;labelTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;loopTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;altBackground&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBkg&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBorder&#x27;:&#x27;#B9C2D0&#x27;,&#x27;edgeLabelBackground&#x27;:&#x27;#FFFFFF&#x27;,&#x27;titleColor&#x27;:&#x27;#14213D&#x27;}}}%%
+flowchart LR
+  A[&quot;1. Ask Cowork&lt;br/&gt;publish this internally&quot;] --&gt; B[&quot;2. Cowork packages it&lt;br/&gt;manifest and preflight checks&quot;]
+  B --&gt; C[&quot;3. Upload and scan&lt;br/&gt;about 30 seconds&quot;]
+  C --&gt;|&quot;static HTML&quot;| D[&quot;4. Live&lt;br/&gt;share link and expiry date&quot;]
+  C --&gt;|&quot;Python app&quot;| E[&quot;4. Waiting for approval&lt;br/&gt;Cowork names the approver group&quot;]
+  E --&gt;|&quot;approved&quot;| D
+  C --&gt;|&quot;findings&quot;| F[&quot;Rejected&lt;br/&gt;Cowork fixes and resubmits, up to 3 times&quot;]
+  F --&gt; C</pre></div>
+    <figcaption>Figure 2. Four steps for a static artifact, five for a Python app. The publisher never leaves Cowork.</figcaption>
+  </figure>
+  <details class="src">
+    <summary>Mermaid source <span class="hint">copy and paste into any Mermaid renderer</span></summary>
+    <div class="src-wrap">
+      <button class="copy" type="button" data-copy="src-publisher">Copy</button>
+      <pre id="src-publisher"><code>flowchart LR
+  A[&quot;1. Ask Cowork&lt;br/&gt;publish this internally&quot;] --&gt; B[&quot;2. Cowork packages it&lt;br/&gt;manifest and preflight checks&quot;]
+  B --&gt; C[&quot;3. Upload and scan&lt;br/&gt;about 30 seconds&quot;]
+  C --&gt;|&quot;static HTML&quot;| D[&quot;4. Live&lt;br/&gt;share link and expiry date&quot;]
+  C --&gt;|&quot;Python app&quot;| E[&quot;4. Waiting for approval&lt;br/&gt;Cowork names the approver group&quot;]
+  E --&gt;|&quot;approved&quot;| D
+  C --&gt;|&quot;findings&quot;| F[&quot;Rejected&lt;br/&gt;Cowork fixes and resubmits, up to 3 times&quot;]
+  F --&gt; C</code></pre>
+    </div>
+  </details>
+</section>
+<section class="fig" id="publish">
+  <header class="fig-head">
+    <span class="eyebrow">Figure 3</span>
+    <h2>Behind the scenes: publish and scan</h2>
+    <p class="claim">Two separate channels leave Claude&#x27;s side: tool calls carry the user&#x27;s Entra identity, the upload carries a one-time token. Neither carries a password.</p>
+  </header>
+  <p class="body">The tool calls originate from Anthropic&#x27;s connector service with the employee&#x27;s Entra token, which APIM validates on every call. The upload comes from the Cowork sandbox, which has no identity of its own, so it presents a one-time token minted during the authenticated call. The artifact bytes never pass through the AI model. Malware scanning is done by Microsoft Defender for Storage the moment the upload lands in Blob; the rest of the checks run as a short-lived Kubernetes job per submission.</p>
+  <figure>
+    <div class="sheet"><pre class="mermaid">%%{init: {&#x27;theme&#x27;:&#x27;base&#x27;,&#x27;themeVariables&#x27;:{&#x27;fontFamily&#x27;:&#x27;Source Sans 3, Segoe UI, Helvetica, Arial, sans-serif&#x27;,&#x27;fontSize&#x27;:&#x27;14px&#x27;,&#x27;primaryColor&#x27;:&#x27;#E6F1F1&#x27;,&#x27;primaryTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;primaryBorderColor&#x27;:&#x27;#0E7C7B&#x27;,&#x27;lineColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;secondaryColor&#x27;:&#x27;#F5EBD6&#x27;,&#x27;tertiaryColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;actorBkg&#x27;:&#x27;#E6F1F1&#x27;,&#x27;actorBorder&#x27;:&#x27;#0E7C7B&#x27;,&#x27;actorTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;actorLineColor&#x27;:&#x27;#B9C2D0&#x27;,&#x27;signalColor&#x27;:&#x27;#14213D&#x27;,&#x27;signalTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBkgColor&#x27;:&#x27;#FFF3DB&#x27;,&#x27;noteTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBorderColor&#x27;:&#x27;#B7791F&#x27;,&#x27;labelBoxBkgColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;labelBoxBorderColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;labelTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;loopTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;altBackground&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBkg&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBorder&#x27;:&#x27;#B9C2D0&#x27;,&#x27;edgeLabelBackground&#x27;:&#x27;#FFFFFF&#x27;,&#x27;titleColor&#x27;:&#x27;#14213D&#x27;}}}%%
+sequenceDiagram
+  autonumber
+  actor Pub as Publisher
+  participant CW as Cowork agent
+  participant SB as Cowork sandbox
+  participant AN as Anthropic connector service
+  participant GW as App Gateway and APIM
+  participant ID as Entra ID
+  participant IN as Intake API
+  participant SC as Scanner worker
+  participant BL as Blob Storage
+
+  Pub-&gt;&gt;CW: publish this dashboard internally
+  CW-&gt;&gt;CW: load publish-to-aks skill, write manifest.json, run preflight.sh
+  CW-&gt;&gt;AN: tool beginPublish(manifest)
+  AN-&gt;&gt;GW: POST /v1/publish with Entra bearer token
+  GW-&gt;&gt;ID: validate token, audience, scope
+  ID--&gt;&gt;GW: valid, user oid
+  GW-&gt;&gt;IN: forward with X-Publisher-Oid
+  IN--&gt;&gt;CW: jobId, uploadUrl, one-time uploadToken
+  Note over AN,GW: replies travel back through APIM and the connector service
+  CW-&gt;&gt;SB: run upload.sh dist/
+  SB-&gt;&gt;GW: PUT /v1/publish/{jobId}/upload, bearer uploadToken, zip body
+  GW-&gt;&gt;IN: stream body, 32 MiB cap
+  IN-&gt;&gt;BL: write intake/{jobId}.zip
+  BL-&gt;&gt;BL: Defender for Storage scans the upload on commit
+  SB-&gt;&gt;GW: POST /v1/publish/{jobId}/finalize with sha256
+  GW-&gt;&gt;IN: forward
+  IN-&gt;&gt;SC: queue message on Service Bus
+  SC-&gt;&gt;BL: read bundle
+  SC-&gt;&gt;SC: intake checks, gitleaks, HTML and JS rules, Python import allowlist
+  SC-&gt;&gt;BL: read Defender scan result tag, wait up to 60 s
+  SC-&gt;&gt;SC: policy.ts verdict
+  SC-&gt;&gt;BL: write findings and state
+  loop every 10 s, up to 10 min
+    CW-&gt;&gt;AN: tool getPublishStatus(jobId)
+    AN-&gt;&gt;GW: GET /v1/publish/{jobId}
+    GW-&gt;&gt;IN: forward
+    IN--&gt;&gt;CW: state, and findings or url
+  end
+  CW--&gt;&gt;Pub: share link and expiry, or findings to fix</pre></div>
+    <figcaption>Figure 3. Two separate channels leave Claude&#x27;s side: tool calls carry the user&#x27;s Entra identity, the upload carries a one-time token. Neither carries a password.</figcaption>
+  </figure>
+  <details class="src">
+    <summary>Mermaid source <span class="hint">copy and paste into any Mermaid renderer</span></summary>
+    <div class="src-wrap">
+      <button class="copy" type="button" data-copy="src-publish">Copy</button>
+      <pre id="src-publish"><code>sequenceDiagram
+  autonumber
+  actor Pub as Publisher
+  participant CW as Cowork agent
+  participant SB as Cowork sandbox
+  participant AN as Anthropic connector service
+  participant GW as App Gateway and APIM
+  participant ID as Entra ID
+  participant IN as Intake API
+  participant SC as Scanner worker
+  participant BL as Blob Storage
+
+  Pub-&gt;&gt;CW: publish this dashboard internally
+  CW-&gt;&gt;CW: load publish-to-aks skill, write manifest.json, run preflight.sh
+  CW-&gt;&gt;AN: tool beginPublish(manifest)
+  AN-&gt;&gt;GW: POST /v1/publish with Entra bearer token
+  GW-&gt;&gt;ID: validate token, audience, scope
+  ID--&gt;&gt;GW: valid, user oid
+  GW-&gt;&gt;IN: forward with X-Publisher-Oid
+  IN--&gt;&gt;CW: jobId, uploadUrl, one-time uploadToken
+  Note over AN,GW: replies travel back through APIM and the connector service
+  CW-&gt;&gt;SB: run upload.sh dist/
+  SB-&gt;&gt;GW: PUT /v1/publish/{jobId}/upload, bearer uploadToken, zip body
+  GW-&gt;&gt;IN: stream body, 32 MiB cap
+  IN-&gt;&gt;BL: write intake/{jobId}.zip
+  BL-&gt;&gt;BL: Defender for Storage scans the upload on commit
+  SB-&gt;&gt;GW: POST /v1/publish/{jobId}/finalize with sha256
+  GW-&gt;&gt;IN: forward
+  IN-&gt;&gt;SC: queue message on Service Bus
+  SC-&gt;&gt;BL: read bundle
+  SC-&gt;&gt;SC: intake checks, gitleaks, HTML and JS rules, Python import allowlist
+  SC-&gt;&gt;BL: read Defender scan result tag, wait up to 60 s
+  SC-&gt;&gt;SC: policy.ts verdict
+  SC-&gt;&gt;BL: write findings and state
+  loop every 10 s, up to 10 min
+    CW-&gt;&gt;AN: tool getPublishStatus(jobId)
+    AN-&gt;&gt;GW: GET /v1/publish/{jobId}
+    GW-&gt;&gt;IN: forward
+    IN--&gt;&gt;CW: state, and findings or url
+  end
+  CW--&gt;&gt;Pub: share link and expiry, or findings to fix</code></pre>
+    </div>
+  </details>
+</section>
+<section class="fig" id="deploy">
+  <header class="fig-head">
+    <span class="eyebrow">Figure 4</span>
+    <h2>Behind the scenes: going live</h2>
+    <p class="claim">Static artifacts go live in seconds by copying files. Python artifacts ride your existing Azure DevOps pipeline: scan, human approval, then cluster admission policy, using the AKS service connection you already have.</p>
+  </header>
+  <p class="body">The split is the heart of the design. A static artifact is data served from storage; nothing of it ever executes on the cluster, and nothing calls the Kubernetes API. A Python artifact executes on the cluster, so it goes through Azure DevOps like every other deployment: the pipeline fetches the bundle, runs gitleaks under your policy and Sonar as an advisory report, waits for a member of the approvers group to approve the Environment check, then applies the manifests with the AKS service connection. The cluster&#x27;s own admission policy still refuses the pod unless its image, security settings and capabilities match what the platform team pinned.</p>
+  <figure>
+    <div class="sheet"><pre class="mermaid">%%{init: {&#x27;theme&#x27;:&#x27;base&#x27;,&#x27;themeVariables&#x27;:{&#x27;fontFamily&#x27;:&#x27;Source Sans 3, Segoe UI, Helvetica, Arial, sans-serif&#x27;,&#x27;fontSize&#x27;:&#x27;14px&#x27;,&#x27;primaryColor&#x27;:&#x27;#E6F1F1&#x27;,&#x27;primaryTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;primaryBorderColor&#x27;:&#x27;#0E7C7B&#x27;,&#x27;lineColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;secondaryColor&#x27;:&#x27;#F5EBD6&#x27;,&#x27;tertiaryColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;actorBkg&#x27;:&#x27;#E6F1F1&#x27;,&#x27;actorBorder&#x27;:&#x27;#0E7C7B&#x27;,&#x27;actorTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;actorLineColor&#x27;:&#x27;#B9C2D0&#x27;,&#x27;signalColor&#x27;:&#x27;#14213D&#x27;,&#x27;signalTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBkgColor&#x27;:&#x27;#FFF3DB&#x27;,&#x27;noteTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBorderColor&#x27;:&#x27;#B7791F&#x27;,&#x27;labelBoxBkgColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;labelBoxBorderColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;labelTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;loopTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;altBackground&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBkg&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBorder&#x27;:&#x27;#B9C2D0&#x27;,&#x27;edgeLabelBackground&#x27;:&#x27;#FFFFFF&#x27;,&#x27;titleColor&#x27;:&#x27;#14213D&#x27;}}}%%
+sequenceDiagram
+  autonumber
+  participant SC as Scanner worker
+  participant BL as Blob Storage
+  participant ST as Static gateway
+  participant ADO as Azure DevOps pipeline
+  actor APR as Approver
+  participant K8 as Kubernetes API
+  participant POL as Azure Policy and Pod Security
+  participant POD as Python runtime pod
+  participant IN as Intake API
+
+  alt static HTML, seconds
+    SC-&gt;&gt;BL: copy bundle to serving/{id}/
+    ST--&gt;&gt;ST: picks it up from the read-only mount
+    SC-&gt;&gt;IN: state = live, url = artifacts.corp.com/view/{id}
+  else Python app, your normal deployment path
+    SC-&gt;&gt;ADO: trigger artifact-python-deploy with jobId, Entra token
+    ADO-&gt;&gt;BL: download bundle via the storage service connection
+    ADO-&gt;&gt;ADO: gitleaks under policy, Sonar scan attached as advisory report
+    ADO-&gt;&gt;IN: state = awaiting_approval, run link
+    APR-&gt;&gt;ADO: approve the Environment check, Entra group artifacts-approvers
+    ADO-&gt;&gt;K8: apply ConfigMap with app.py, Deployment, Service, HTTPRoute, TTL label, via the AKS service connection
+    K8-&gt;&gt;POL: admission review
+    POL--&gt;&gt;K8: allowed only if image digest, security context and capabilities match policy
+    K8-&gt;&gt;POD: schedule on the untrusted node pool
+    POD--&gt;&gt;ADO: rollout healthy on port 8080
+    ADO-&gt;&gt;IN: state = live
+  end</pre></div>
+    <figcaption>Figure 4. Static artifacts go live in seconds by copying files. Python artifacts ride your existing Azure DevOps pipeline: scan, human approval, then cluster admission policy, using the AKS service connection you already have.</figcaption>
+  </figure>
+  <details class="src">
+    <summary>Mermaid source <span class="hint">copy and paste into any Mermaid renderer</span></summary>
+    <div class="src-wrap">
+      <button class="copy" type="button" data-copy="src-deploy">Copy</button>
+      <pre id="src-deploy"><code>sequenceDiagram
+  autonumber
+  participant SC as Scanner worker
+  participant BL as Blob Storage
+  participant ST as Static gateway
+  participant ADO as Azure DevOps pipeline
+  actor APR as Approver
+  participant K8 as Kubernetes API
+  participant POL as Azure Policy and Pod Security
+  participant POD as Python runtime pod
+  participant IN as Intake API
+
+  alt static HTML, seconds
+    SC-&gt;&gt;BL: copy bundle to serving/{id}/
+    ST--&gt;&gt;ST: picks it up from the read-only mount
+    SC-&gt;&gt;IN: state = live, url = artifacts.corp.com/view/{id}
+  else Python app, your normal deployment path
+    SC-&gt;&gt;ADO: trigger artifact-python-deploy with jobId, Entra token
+    ADO-&gt;&gt;BL: download bundle via the storage service connection
+    ADO-&gt;&gt;ADO: gitleaks under policy, Sonar scan attached as advisory report
+    ADO-&gt;&gt;IN: state = awaiting_approval, run link
+    APR-&gt;&gt;ADO: approve the Environment check, Entra group artifacts-approvers
+    ADO-&gt;&gt;K8: apply ConfigMap with app.py, Deployment, Service, HTTPRoute, TTL label, via the AKS service connection
+    K8-&gt;&gt;POL: admission review
+    POL--&gt;&gt;K8: allowed only if image digest, security context and capabilities match policy
+    K8-&gt;&gt;POD: schedule on the untrusted node pool
+    POD--&gt;&gt;ADO: rollout healthy on port 8080
+    ADO-&gt;&gt;IN: state = live
+  end</code></pre>
+    </div>
+  </details>
+</section>
+<section class="fig" id="viewer">
+  <header class="fig-head">
+    <span class="eyebrow">Figure 5</span>
+    <h2>What the viewer experiences</h2>
+    <p class="claim">A colleague signs in once on the corporate domain. The artifact itself renders from a separate domain inside a sandboxed frame that the browser will not let navigate away.</p>
+  </header>
+  <p class="body">The share link always points at the viewer shell on the corporate domain. The shell does the Entra sign-in, writes an audit entry, and embeds the artifact from the separate artifact domain. From that point the browser enforces the rules: no outbound requests, no forms posting anywhere, no popups, no leaving the frame, no downloads. A persistent banner above the frame reminds viewers never to type credentials into an artifact.</p>
+  <figure>
+    <div class="sheet"><pre class="mermaid">%%{init: {&#x27;theme&#x27;:&#x27;base&#x27;,&#x27;themeVariables&#x27;:{&#x27;fontFamily&#x27;:&#x27;Source Sans 3, Segoe UI, Helvetica, Arial, sans-serif&#x27;,&#x27;fontSize&#x27;:&#x27;14px&#x27;,&#x27;primaryColor&#x27;:&#x27;#E6F1F1&#x27;,&#x27;primaryTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;primaryBorderColor&#x27;:&#x27;#0E7C7B&#x27;,&#x27;lineColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;secondaryColor&#x27;:&#x27;#F5EBD6&#x27;,&#x27;tertiaryColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;actorBkg&#x27;:&#x27;#E6F1F1&#x27;,&#x27;actorBorder&#x27;:&#x27;#0E7C7B&#x27;,&#x27;actorTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;actorLineColor&#x27;:&#x27;#B9C2D0&#x27;,&#x27;signalColor&#x27;:&#x27;#14213D&#x27;,&#x27;signalTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBkgColor&#x27;:&#x27;#FFF3DB&#x27;,&#x27;noteTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBorderColor&#x27;:&#x27;#B7791F&#x27;,&#x27;labelBoxBkgColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;labelBoxBorderColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;labelTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;loopTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;altBackground&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBkg&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBorder&#x27;:&#x27;#B9C2D0&#x27;,&#x27;edgeLabelBackground&#x27;:&#x27;#FFFFFF&#x27;,&#x27;titleColor&#x27;:&#x27;#14213D&#x27;}}}%%
+sequenceDiagram
+  autonumber
+  actor V as Viewer, a colleague
+  participant BR as Browser
+  participant SH as Viewer shell on artifacts.corp.com
+  participant ID as Entra ID
+  participant AG as Artifact gateway on id.corp-artifacts.net
+
+  V-&gt;&gt;BR: opens artifacts.corp.com/view/{id}
+  BR-&gt;&gt;SH: GET /view/{id}
+  SH-&gt;&gt;ID: sign-in with MSAL
+  ID--&gt;&gt;SH: viewer identity
+  SH-&gt;&gt;SH: audit log: viewer, artifact, time
+  SH--&gt;&gt;BR: page with sandboxed iframe, frame-src pinned to corp-artifacts.net
+  BR-&gt;&gt;AG: GET /?t=short-lived token, inside the iframe
+  AG-&gt;&gt;AG: verify token, set __Host- cookie for this origin only
+  AG--&gt;&gt;BR: artifact HTML with strict Content Security Policy
+  Note over BR: blocked by the browser from here on: fetch to any host, forms posting anywhere, popups, navigating the frame away, downloads</pre></div>
+    <figcaption>Figure 5. A colleague signs in once on the corporate domain. The artifact itself renders from a separate domain inside a sandboxed frame that the browser will not let navigate away.</figcaption>
+  </figure>
+  <details class="src">
+    <summary>Mermaid source <span class="hint">copy and paste into any Mermaid renderer</span></summary>
+    <div class="src-wrap">
+      <button class="copy" type="button" data-copy="src-viewer">Copy</button>
+      <pre id="src-viewer"><code>sequenceDiagram
+  autonumber
+  actor V as Viewer, a colleague
+  participant BR as Browser
+  participant SH as Viewer shell on artifacts.corp.com
+  participant ID as Entra ID
+  participant AG as Artifact gateway on id.corp-artifacts.net
+
+  V-&gt;&gt;BR: opens artifacts.corp.com/view/{id}
+  BR-&gt;&gt;SH: GET /view/{id}
+  SH-&gt;&gt;ID: sign-in with MSAL
+  ID--&gt;&gt;SH: viewer identity
+  SH-&gt;&gt;SH: audit log: viewer, artifact, time
+  SH--&gt;&gt;BR: page with sandboxed iframe, frame-src pinned to corp-artifacts.net
+  BR-&gt;&gt;AG: GET /?t=short-lived token, inside the iframe
+  AG-&gt;&gt;AG: verify token, set __Host- cookie for this origin only
+  AG--&gt;&gt;BR: artifact HTML with strict Content Security Policy
+  Note over BR: blocked by the browser from here on: fetch to any host, forms posting anywhere, popups, navigating the frame away, downloads</code></pre>
+    </div>
+  </details>
+</section>
+<section class="fig" id="states">
+  <header class="fig-head">
+    <span class="eyebrow">Figure 6</span>
+    <h2>The life of one publish job</h2>
+    <p class="claim">Every job is in exactly one of nine states. The status tool reports the state and, when relevant, the findings or the approver group.</p>
+  </header>
+  <p class="body">This is the view operations will live in. Three exits are terminal: rejected, failed, expired. For Python artifacts, awaiting_approval and deploying are reported by the Azure DevOps pipeline. Nothing lives forever; the TTL in the manifest (default 14 days, maximum 90) is enforced by a nightly garbage-collection pipeline.</p>
+  <figure>
+    <div class="sheet"><pre class="mermaid">%%{init: {&#x27;theme&#x27;:&#x27;base&#x27;,&#x27;themeVariables&#x27;:{&#x27;fontFamily&#x27;:&#x27;Source Sans 3, Segoe UI, Helvetica, Arial, sans-serif&#x27;,&#x27;fontSize&#x27;:&#x27;14px&#x27;,&#x27;primaryColor&#x27;:&#x27;#E6F1F1&#x27;,&#x27;primaryTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;primaryBorderColor&#x27;:&#x27;#0E7C7B&#x27;,&#x27;lineColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;secondaryColor&#x27;:&#x27;#F5EBD6&#x27;,&#x27;tertiaryColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;actorBkg&#x27;:&#x27;#E6F1F1&#x27;,&#x27;actorBorder&#x27;:&#x27;#0E7C7B&#x27;,&#x27;actorTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;actorLineColor&#x27;:&#x27;#B9C2D0&#x27;,&#x27;signalColor&#x27;:&#x27;#14213D&#x27;,&#x27;signalTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBkgColor&#x27;:&#x27;#FFF3DB&#x27;,&#x27;noteTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBorderColor&#x27;:&#x27;#B7791F&#x27;,&#x27;labelBoxBkgColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;labelBoxBorderColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;labelTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;loopTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;altBackground&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBkg&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBorder&#x27;:&#x27;#B9C2D0&#x27;,&#x27;edgeLabelBackground&#x27;:&#x27;#FFFFFF&#x27;,&#x27;titleColor&#x27;:&#x27;#14213D&#x27;}}}%%
+stateDiagram-v2
+  [*] --&gt; awaiting_upload : beginPublish
+  awaiting_upload --&gt; scanning : upload and finalize
+  awaiting_upload --&gt; expired : no upload within 10 min
+  scanning --&gt; rejected : any deny finding
+  scanning --&gt; deploying : static, verdict pass
+  scanning --&gt; awaiting_approval : python, verdict pass
+  awaiting_approval --&gt; deploying : approved in Azure DevOps
+  awaiting_approval --&gt; expired : approval check times out at 7 days
+  deploying --&gt; live : route healthy
+  deploying --&gt; failed : rollout error
+  live --&gt; expired : TTL reached, GC removes it
+  rejected --&gt; [*]
+  failed --&gt; [*]
+  expired --&gt; [*]</pre></div>
+    <figcaption>Figure 6. Every job is in exactly one of nine states. The status tool reports the state and, when relevant, the findings or the approver group.</figcaption>
+  </figure>
+  <details class="src">
+    <summary>Mermaid source <span class="hint">copy and paste into any Mermaid renderer</span></summary>
+    <div class="src-wrap">
+      <button class="copy" type="button" data-copy="src-states">Copy</button>
+      <pre id="src-states"><code>stateDiagram-v2
+  [*] --&gt; awaiting_upload : beginPublish
+  awaiting_upload --&gt; scanning : upload and finalize
+  awaiting_upload --&gt; expired : no upload within 10 min
+  scanning --&gt; rejected : any deny finding
+  scanning --&gt; deploying : static, verdict pass
+  scanning --&gt; awaiting_approval : python, verdict pass
+  awaiting_approval --&gt; deploying : approved in Azure DevOps
+  awaiting_approval --&gt; expired : approval check times out at 7 days
+  deploying --&gt; live : route healthy
+  deploying --&gt; failed : rollout error
+  live --&gt; expired : TTL reached, GC removes it
+  rejected --&gt; [*]
+  failed --&gt; [*]
+  expired --&gt; [*]</code></pre>
+    </div>
+  </details>
+</section>
+<section class="fig" id="containment">
+  <header class="fig-head">
+    <span class="eyebrow">Figure 7</span>
+    <h2>If a bad artifact gets through the scanner</h2>
+    <p class="claim">The scanner is a gate, not the wall. Each column lists what an attacker must defeat, outermost first, before anything of value is reachable.</p>
+  </header>
+  <p class="body">This is the answer to the question management will ask: what happens when the scan misses something? For static artifacts, the browser&#x27;s own security model does the containing. For Python artifacts, the cluster does: no network, no identity, no storage, a node pool shared with nothing else, and a human who said yes.</p>
+  <figure>
+    <div class="sheet"><pre class="mermaid">%%{init: {&#x27;theme&#x27;:&#x27;base&#x27;,&#x27;themeVariables&#x27;:{&#x27;fontFamily&#x27;:&#x27;Source Sans 3, Segoe UI, Helvetica, Arial, sans-serif&#x27;,&#x27;fontSize&#x27;:&#x27;14px&#x27;,&#x27;primaryColor&#x27;:&#x27;#E6F1F1&#x27;,&#x27;primaryTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;primaryBorderColor&#x27;:&#x27;#0E7C7B&#x27;,&#x27;lineColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;secondaryColor&#x27;:&#x27;#F5EBD6&#x27;,&#x27;tertiaryColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;actorBkg&#x27;:&#x27;#E6F1F1&#x27;,&#x27;actorBorder&#x27;:&#x27;#0E7C7B&#x27;,&#x27;actorTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;actorLineColor&#x27;:&#x27;#B9C2D0&#x27;,&#x27;signalColor&#x27;:&#x27;#14213D&#x27;,&#x27;signalTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBkgColor&#x27;:&#x27;#FFF3DB&#x27;,&#x27;noteTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;noteBorderColor&#x27;:&#x27;#B7791F&#x27;,&#x27;labelBoxBkgColor&#x27;:&#x27;#F3F6FA&#x27;,&#x27;labelBoxBorderColor&#x27;:&#x27;#3F4A5E&#x27;,&#x27;labelTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;loopTextColor&#x27;:&#x27;#14213D&#x27;,&#x27;altBackground&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBkg&#x27;:&#x27;#F3F6FA&#x27;,&#x27;clusterBorder&#x27;:&#x27;#B9C2D0&#x27;,&#x27;edgeLabelBackground&#x27;:&#x27;#FFFFFF&#x27;,&#x27;titleColor&#x27;:&#x27;#14213D&#x27;}}}%%
+flowchart TB
+  subgraph s [&quot;Static artifact: runs in the viewer&#x27;s browser&quot;]
+    direction TB
+    S1[&quot;Separate domain corp-artifacts.net&lt;br/&gt;no corporate cookies, no same-site access&quot;] --&gt; S2[&quot;One origin per artifact&lt;br/&gt;cannot touch another artifact&#x27;s data&quot;]
+    S2 --&gt; S3[&quot;Sandboxed iframe in the shell&lt;br/&gt;no popups, no top navigation, frame-src pinned&quot;]
+    S3 --&gt; S4[&quot;Content Security Policy&lt;br/&gt;no fetch, XHR or WebSocket to any host&quot;]
+    S4 --&gt; S5[&quot;Scanner rules&lt;br/&gt;no password fields, no external forms or scripts&quot;]
+  end
+  subgraph d [&quot;Python artifact: runs on the cluster&quot;]
+    direction TB
+    D1[&quot;Human approval&lt;br/&gt;Azure DevOps Environment check, Entra approvers group&quot;] --&gt; D2[&quot;Dedicated tainted node pool&lt;br/&gt;nothing else is scheduled there&quot;]
+    D2 --&gt; D3[&quot;NetworkPolicy deny-all egress&lt;br/&gt;no DNS, no internet, no IMDS, no cluster services&quot;]
+    D3 --&gt; D4[&quot;No service-account token, no cloud identity&lt;br/&gt;app.py mounted read-only from a ConfigMap&quot;]
+    D4 --&gt; D5[&quot;Restricted Pod Security and Azure Policy&lt;br/&gt;non-root, read-only root, no capabilities, pinned image&quot;]
+    D5 --&gt; D6[&quot;Outside the mesh&lt;br/&gt;mesh workloads refuse plaintext callers&quot;]
+    D6 --&gt; D7[&quot;Scanner rules&lt;br/&gt;import allowlist, no subprocess or sockets&quot;]
+  end</pre></div>
+    <figcaption>Figure 7. The scanner is a gate, not the wall. Each column lists what an attacker must defeat, outermost first, before anything of value is reachable.</figcaption>
+  </figure>
+  <details class="src">
+    <summary>Mermaid source <span class="hint">copy and paste into any Mermaid renderer</span></summary>
+    <div class="src-wrap">
+      <button class="copy" type="button" data-copy="src-containment">Copy</button>
+      <pre id="src-containment"><code>flowchart TB
+  subgraph s [&quot;Static artifact: runs in the viewer&#x27;s browser&quot;]
+    direction TB
+    S1[&quot;Separate domain corp-artifacts.net&lt;br/&gt;no corporate cookies, no same-site access&quot;] --&gt; S2[&quot;One origin per artifact&lt;br/&gt;cannot touch another artifact&#x27;s data&quot;]
+    S2 --&gt; S3[&quot;Sandboxed iframe in the shell&lt;br/&gt;no popups, no top navigation, frame-src pinned&quot;]
+    S3 --&gt; S4[&quot;Content Security Policy&lt;br/&gt;no fetch, XHR or WebSocket to any host&quot;]
+    S4 --&gt; S5[&quot;Scanner rules&lt;br/&gt;no password fields, no external forms or scripts&quot;]
+  end
+  subgraph d [&quot;Python artifact: runs on the cluster&quot;]
+    direction TB
+    D1[&quot;Human approval&lt;br/&gt;Azure DevOps Environment check, Entra approvers group&quot;] --&gt; D2[&quot;Dedicated tainted node pool&lt;br/&gt;nothing else is scheduled there&quot;]
+    D2 --&gt; D3[&quot;NetworkPolicy deny-all egress&lt;br/&gt;no DNS, no internet, no IMDS, no cluster services&quot;]
+    D3 --&gt; D4[&quot;No service-account token, no cloud identity&lt;br/&gt;app.py mounted read-only from a ConfigMap&quot;]
+    D4 --&gt; D5[&quot;Restricted Pod Security and Azure Policy&lt;br/&gt;non-root, read-only root, no capabilities, pinned image&quot;]
+    D5 --&gt; D6[&quot;Outside the mesh&lt;br/&gt;mesh workloads refuse plaintext callers&quot;]
+    D6 --&gt; D7[&quot;Scanner rules&lt;br/&gt;import allowlist, no subprocess or sockets&quot;]
+  end</code></pre>
+    </div>
+  </details>
+</section>
+
+  <section class="roles" id="roles">
+    <h2>Who does what</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Role</th><th>Who</th><th>Does</th><th>How often</th></tr></thead>
+        <tbody>
+<tr><td>Publisher</td><td>Any employee with Cowork and the connector</td><td>Asks Cowork to publish. Fixes findings when asked. Receives the link and expiry.</td><td>Whenever they have something to share</td></tr>
+<tr><td>Approver</td><td>Members of the Entra group artifacts-approvers</td><td>Opens the Azure DevOps run, reads the scan summary and Sonar report, approves or rejects the Environment check.</td><td>Per Python artifact, within 7 days</td></tr>
+<tr><td>Viewer</td><td>Anyone in the tenant who gets the link</td><td>Opens the shell link, signs in, views the artifact.</td><td>Any time until the TTL</td></tr>
+<tr><td>Platform team</td><td>Owners of the pipeline repo</td><td>Maintains the skill, the connector, the scanner image, the curated Python runtime, Azure Policy, the two Azure DevOps pipelines and the Environment check. Reviews pull requests to policy files.</td><td>Runtime image on request; policy by PR</td></tr>
+<tr><td>Claude org Owner</td><td>Claude Team or Enterprise owner</td><td>Adds the custom connector once. Publishes the skill to the skills repo.</td><td>Once, then on changes</td></tr>
+<tr><td>Azure identity admin</td><td>Entra administrator</td><td>Owns the two app registrations and the approvers group membership.</td><td>Setup, then membership changes</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="foot">Source for every diagram is in <code>DIAGRAMS.md</code> next to <code>DESIGN.md</code> in the project folder. The design document holds the reasoning behind each decision shown here.</p>
+</div>
+
+<script>
+document.querySelectorAll('button.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var pre = document.getElementById(b.getAttribute('data-copy'));
+    var text = pre ? pre.textContent : '';
+    var done = function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1600); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { fallback(); });
+    } else { fallback(); }
+    function fallback() {
+      var r = document.createRange(); r.selectNodeContents(pre);
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      try { document.execCommand('copy'); done(); } catch (err) { b.textContent = 'Select and copy'; }
+    }
+  });
+});
+</script>
+
+<script>mermaid.initialize({startOnLoad:false}); mermaid.run({querySelector:"pre.mermaid"});</script>
+</body>
+</html>

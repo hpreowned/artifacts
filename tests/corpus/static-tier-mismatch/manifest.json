@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "name": "mismatch",
+  "tier": "static",
+  "runtime": null,
+  "entrypoint": "index.html",
+  "externalScripts": [
+    "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"
+  ],
+  "ttlDays": 14,
+  "generatedBy": {
+    "tool": "artifactctl",
+    "model": "test-corpus",
+    "session": "corpus"
+  }
+}

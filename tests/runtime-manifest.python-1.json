@@ -1,0 +1,37 @@
+{
+  "runtime": "python-1",
+  "image": "jfrog.corp.com/artifacts/python-runtime",
+  "python": "3.12",
+  "entrypoints": {
+    "streamlit": [
+      "streamlit",
+      "run",
+      "/app/app.py",
+      "--server.port=8080",
+      "--server.address=0.0.0.0",
+      "--server.headless=true",
+      "--browser.gatherUsageStats=false"
+    ],
+    "fastapi": [
+      "uvicorn",
+      "app:app",
+      "--host",
+      "0.0.0.0",
+      "--port",
+      "8080",
+      "--app-dir",
+      "/app"
+    ]
+  },
+  "modules": [
+    "streamlit",
+    "fastapi",
+    "uvicorn",
+    "pandas",
+    "numpy",
+    "plotly",
+    "altair",
+    "pydantic",
+    "starlette"
+  ]
+}

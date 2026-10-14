@@ -1,0 +1,23 @@
+# Job states
+
+One job per `beginPublish`. One artifact id per job. States and who moves them:
+
+| From | To | Who | Trigger |
+|---|---|---|---|
+| (new) | awaiting_upload | intake-api | beginPublish |
+| awaiting_upload | scanning | intake-api | finalize with matching sha256 |
+| awaiting_upload | expired | intake-api | 10 min without finalize |
+| scanning | rejected | scanner worker | any `deny` finding (policy.ts) |
+| scanning | deploying | scanner worker | tier static, verdict pass |
+| scanning | awaiting_approval | Azure DevOps pipeline via /events | tier python, verdict pass, pipeline reached the approval check |
+| scanning | failed | scanner worker | internal error, Defender result `Error`, pipeline trigger failed |
+| awaiting_approval | deploying | pipeline via /events | approval granted |
+| awaiting_approval | rejected | pipeline via /events | approval declined |
+| awaiting_approval | expired | pipeline via /events | approval check timed out (7 days) |
+| deploying | live | scanner worker (static) / pipeline via /events (python) | files in serving/ (static); rollout healthy (python) |
+| deploying | failed | scanner worker / pipeline | copy or rollout error |
+| live | expired | artifact-gc pipeline via /events (python) / scanner worker GC (static) | TTL reached |
+
+Terminal: rejected, failed, expired. `live` is terminal for the publisher; it ends in `expired`.
+
+Defender for Storage result handling at stage 3: `Malicious` → rejected with MAL-001. `No threats found` → continue. `Error`, `Not scanned`, or no result within 60 s → `failed` with MAL-002 and a message that asks for a resubmit; never auto-allow.

@@ -1,0 +1,7 @@
+{
+  "state": "rejected",
+  "rules": [
+    "PY-002"
+  ],
+  "note": "scanner catches it; the runtime test (NetworkPolicy) uses a hand-deployed pod, see tests/README.md"
+}

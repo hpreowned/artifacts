@@ -1,0 +1,7 @@
+{
+  "state": "rejected",
+  "rules": [
+    "HTML-002",
+    "HTML-005"
+  ]
+}

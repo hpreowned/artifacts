@@ -1,0 +1,7 @@
+{
+  "state": "live",
+  "rules": [
+    "HTML-009"
+  ],
+  "browser": "fetch blocked by CSP connect-src"
+}

@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Q3 sales</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>body{font-family:system-ui;margin:2rem}</style></head>
+<body><h1>Q3 sales by region</h1><canvas id="c" width="600" height="300"></canvas>
+<script>
+const data = {labels:["EMEA","AMER","APAC"], datasets:[{label:"Revenue", data:[12,19,7]}]};
+new Chart(document.getElementById("c"), {type:"bar", data});
+
+</script></body></html>

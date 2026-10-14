@@ -1,0 +1,251 @@
+openapi: 3.0.3
+info:
+  title: Artifact intake API
+  version: 2.0.0
+  description: |
+    Fronted by Azure API Management. The two operations marked `x-mcp-tool: true` are exposed by APIM as MCP tools
+    (server name `artifacts-mcp`). Upload and finalize are reachable through APIM but are not tools.
+    `/events` and `/view-token` are internal only and are never published through APIM.
+    Entra validation happens in APIM (see DESIGN.md §6.10); APIM forwards the caller identity as X-Publisher-Oid / X-Publisher-Upn.
+servers:
+  - url: https://mcp.corp.com/artifacts
+    description: through App Gateway and APIM (public hostname, private backend)
+  - url: http://intake.artifacts-system.svc:8080
+    description: in-cluster, internal routes only
+security:
+  - entra: []
+paths:
+  /v1/publish:
+    post:
+      operationId: beginPublish
+      x-mcp-tool: true
+      summary: Start a publish job. Returns a one-time upload URL and token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Manifest' }
+      responses:
+        '201':
+          description: Job created, awaiting upload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublishBegin' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/publish/{jobId}/upload:
+    put:
+      operationId: uploadBundle
+      summary: Upload the zipped dist/ for a job. Bearer is the one-time uploadToken, not an Entra token.
+      security:
+        - uploadToken: []
+      parameters: [ { $ref: '#/components/parameters/jobId' } ]
+      requestBody:
+        required: true
+        content:
+          application/zip:
+            schema: { type: string, format: binary }
+      responses:
+        '201': { description: Stored }
+        '401': { description: Bad or used token }
+        '413': { description: Larger than maxBytes }
+        '409': { description: Job not awaiting upload }
+  /v1/publish/{jobId}/finalize:
+    post:
+      operationId: finalizePublish
+      summary: Confirm the upload with its SHA-256; moves the job to scanning.
+      security:
+        - uploadToken: []
+      parameters: [ { $ref: '#/components/parameters/jobId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sha256]
+              additionalProperties: false
+              properties:
+                sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+      responses:
+        '202':
+          description: Queued for scanning
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+        '401': { description: Bad or used token }
+        '409': { description: Hash mismatch or job not awaiting finalize }
+  /v1/publish/{jobId}:
+    get:
+      operationId: getPublishStatus
+      x-mcp-tool: true
+      summary: Current state of a publish job, with findings or the live URL.
+      parameters: [ { $ref: '#/components/parameters/jobId' } ]
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
+        '404': { description: Unknown job, or not owned by the caller }
+  /v1/publish/{jobId}/events:
+    post:
+      operationId: postPublishEvent
+      x-internal: true
+      summary: Pipeline callback. Internal only; bearer is the pipeline token.
+      security:
+        - pipelineToken: []
+      parameters: [ { $ref: '#/components/parameters/jobId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventIn' }
+      responses:
+        '204': { description: Recorded }
+        '401': { description: Bad token }
+        '409': { description: Illegal transition }
+  /v1/view-token:
+    post:
+      operationId: createViewToken
+      x-internal: true
+      summary: Mint a short-lived artifact-scoped token for the viewer shell. Internal only.
+      security:
+        - internal: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [artifactId, viewerOid]
+              additionalProperties: false
+              properties:
+                artifactId: { $ref: '#/components/schemas/ArtifactId' }
+                viewerOid: { type: string }
+      responses:
+        '200':
+          description: Token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, expiresAt]
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '404': { description: Artifact not live }
+components:
+  parameters:
+    jobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/JobId' }
+  responses:
+    BadRequest:
+      description: Manifest invalid
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Too many requests
+  securitySchemes:
+    entra:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Entra ID access token, validated by APIM. Scope artifacts.publish.
+    uploadToken:
+      type: http
+      scheme: bearer
+      description: One-time token from beginPublish. 10 minutes, single use, bound to jobId and maxBytes.
+    pipelineToken:
+      type: http
+      scheme: bearer
+      description: Token held by the Azure DevOps pipeline, from Key Vault.
+    internal:
+      type: apiKey
+      in: header
+      name: X-Internal-Caller
+      description: Cluster-internal only; the route is not exposed through APIM.
+  schemas:
+    JobId:
+      type: string
+      pattern: '^job_[a-z0-9]{20}$'
+    ArtifactId:
+      type: string
+      pattern: '^[a-z0-9]{12}$'
+      description: Assigned by intake-api. Becomes the subdomain on the artifact domain.
+    Manifest:
+      type: object
+      description: See contracts/manifest.schema.json for the authoritative JSON Schema.
+      required: [schemaVersion, name, tier, entrypoint, ttlDays, generatedBy]
+      properties:
+        schemaVersion: { type: integer, enum: [2] }
+        name: { type: string }
+        tier: { type: string, enum: [static, python] }
+        runtime: { type: string, nullable: true, enum: [python-1, null] }
+        entrypoint: { type: string, enum: [index.html, app.py] }
+        externalScripts: { type: array, items: { type: string } }
+        ttlDays: { type: integer, minimum: 1, maximum: 90 }
+        generatedBy:
+          type: object
+          required: [tool]
+          properties:
+            tool: { type: string, enum: [cowork, claude-code, artifactctl, other] }
+            model: { type: string }
+            session: { type: string }
+    PublishBegin:
+      type: object
+      required: [jobId, uploadUrl, uploadToken, uploadExpiresAt, maxBytes]
+      properties:
+        jobId: { $ref: '#/components/schemas/JobId' }
+        uploadUrl: { type: string, format: uri }
+        uploadToken: { type: string }
+        uploadExpiresAt: { type: string, format: date-time }
+        maxBytes: { type: integer, example: 26214400 }
+    State:
+      type: string
+      enum: [awaiting_upload, scanning, rejected, awaiting_approval, deploying, live, failed, expired]
+    Finding:
+      type: object
+      required: [rule, severity, message]
+      properties:
+        rule: { type: string, description: 'Rule id from contracts/findings.md, e.g. HTML-005' }
+        severity: { type: string, enum: [deny, warn, info] }
+        file: { type: string }
+        line: { type: integer }
+        message: { type: string }
+    Status:
+      type: object
+      required: [jobId, state, updatedAt]
+      properties:
+        jobId: { $ref: '#/components/schemas/JobId' }
+        state: { $ref: '#/components/schemas/State' }
+        tier: { type: string, enum: [static, python] }
+        updatedAt: { type: string, format: date-time }
+        url: { type: string, format: uri, description: 'Viewer shell URL, present when live' }
+        expiresAt: { type: string, format: date-time }
+        findings: { type: array, items: { $ref: '#/components/schemas/Finding' } }
+        approval:
+          type: object
+          description: Present when awaiting_approval
+          properties:
+            group: { type: string, example: artifacts-approvers }
+            runUrl: { type: string, format: uri }
+        summary: { type: string, description: 'One paragraph for humans, suitable for Cowork to relay' }
+    EventIn:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state: { type: string, enum: [awaiting_approval, deploying, live, failed, rejected, expired] }
+        runUrl: { type: string, format: uri }
+        message: { type: string }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        findings: { type: array, items: { $ref: '#/components/schemas/Finding' } }

@@ -2,6 +2,11 @@
 # The agents in <your-vnet-pool> are assumed to be logged in to jfrog.corp.com already (they build the org's
 # other images), so no registry service connection is introduced here. python-runtime has its own job because
 # it is referenced by digest and its runtime-manifest.json feeds the scanner and the skill reference.
+#
+# Image tags: pushed as jfrog.corp.com/artifacts/<name>:$(Build.BuildId) (T50). The Deploy stage substitutes
+# that tag into every deploy/platform/*.yaml's literal `:<tag>` placeholder with `sed` (chosen over
+# `kustomize edit set image` so deploy/ needs no kustomization.yaml); see "Substitute image tags" below and
+# deploy/README.md's apply-order step 6.
 trigger:
   branches:
     include: [main]
@@ -25,6 +30,13 @@ variables:
     value: jfrog.corp.com/artifacts
   - name: tag
     value: $(Build.BuildId)
+  # scanner/Dockerfile (T17) takes these as build args to pin and verify the gitleaks binary it downloads
+  # from the JFrog generic repo (scanner/README.md SEC stage, STATUS.md T17). Not secrets; set to the real
+  # pinned release once T17 documents it, same version as the Azure DevOps gitleaks policy (DESIGN D-decisions).
+  - name: GITLEAKS_VERSION
+    value: <gitleaks-version>
+  - name: GITLEAKS_SHA256
+    value: <gitleaks-sha256>
 
 stages:
   - stage: Build
@@ -35,17 +47,21 @@ stages:
           matrix:
             intake-api:
               name: intake-api
+              buildArgs: ''
             scanner:
               name: scanner
+              buildArgs: '--build-arg GITLEAKS_VERSION=$(GITLEAKS_VERSION) --build-arg GITLEAKS_SHA256=$(GITLEAKS_SHA256)'
             static-gateway:
               name: static-gateway
+              buildArgs: ''
             viewer-shell:
               name: viewer-shell
+              buildArgs: ''
         steps:
           - checkout: self
           - script: |
               set -euo pipefail
-              docker build --pull -t "$(registry)/$(name):$(tag)" "$(name)/"
+              docker build --pull $(buildArgs) -t "$(registry)/$(name):$(tag)" "$(name)/"
               docker push "$(registry)/$(name):$(tag)"
               docker image inspect --format '{{index .RepoDigests 0}}' "$(registry)/$(name):$(tag)"
             displayName: docker build and push $(name)

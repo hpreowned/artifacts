@@ -54,16 +54,32 @@ policy logging only arrives with istio/ztunnel#1745). An AUDIT duplicate of the 
 
 ## Interfaces this directory expects from other directories
 
-The manifests set these; the code in `intake-api/`, `scanner/`, `static-gateway/`, `viewer-shell/` must read them
-or we reconcile the names at M2. Nothing else in the cluster depends on them.
+**Closed at M2 (T50).** Every env var name, port and probe path in `platform/*.yaml` was read back against
+`intake-api/src/config.ts` (shared by the worker), `static-gateway/README.md` and `viewer-shell/README.md` —
+not guessed. Fixed in this pass: `STORAGE_ACCOUNT`→`STORAGE_ACCOUNT_URL` (full blob endpoint, not a bare
+name), the three container names→`STORAGE_CONTAINER_{JOBS,INTAKE,SERVING}`, `SERVICEBUS_NAMESPACE`→
+`SERVICEBUS_FQDN`, `SHELL_URL`→`SHELL_ORIGIN` (all three services), `PUBLIC_API_URL`→`PUBLIC_BASE_URL` (now
+via the Secrets Store CSI secret, not a plain env), `DEFENDER_WAIT_SECONDS`→`DEFENDER_TIMEOUT_SECONDS`,
+`ADO_ORG_URL`→`ADO_ORG` (bare org name, not a URL), `RUNTIME_MANIFEST_PATH`→`RUNTIME_MANIFEST`,
+`AUTH_MODE`/`REDIRECT_URI` dropped (not read; `DEV_AUTH` unset selects Entra, the redirect URI is built from
+`SHELL_ORIGIN`), `AZURE_TENANT_ID`/`AZURE_CLIENT_ID`/`INTAKE_URL`→`ENTRA_TENANT_ID`/`ENTRA_CLIENT_ID`/
+`INTAKE_INTERNAL_URL`, `AZURE_CLIENT_SECRET`→`ENTRA_CLIENT_SECRET`; `ARTIFACT_DOMAIN`, `MAX_UPLOAD_BYTES` and
+`WORK_DIR` dropped (never read — `MAX_BYTES` is a 25 MiB constant, not configurable). Added where a service
+needed something it was never given: `GITLEAKS_BIN`, `PIPELINE_TIMEOUT_HOURS` (T13), `HEALTH_PORT` (T17) and
+`SHELL_ORIGIN` on scanner-worker; `SHELL_SESSION_KEY` on viewer-shell (`secretproviderclass.yaml` was missing
+it entirely — a real gap, not a naming one). `scanner/src/pipeline.ts` already sends
+`templateParameters: { jobId }` only; `pipelines/artifact-python-deploy.yml` now takes only `jobId` and reads
+`jobs/<jobId>.json` for the rest, matching `intake-api/src/job.ts`'s `JobRecord` exactly (confirmed against
+`intake-api/src/stores/blob.ts`, which is what actually writes that blob).
 
-| Component | Expects |
-|---|---|
-| all | `PORT=8080`, `GET /healthz` → 200 for readiness; uid 65532; writable `/tmp` only |
-| intake-api | `BACKEND=azure`, `STORAGE_ACCOUNT`, `INTAKE_CONTAINER`, `JOBS_CONTAINER`, `SERVICEBUS_NAMESPACE`, `SCAN_QUEUE`, `PUBLIC_API_URL`, `SHELL_URL`, `ARTIFACT_DOMAIN`, `MAX_UPLOAD_BYTES`; secrets `VIEW_TOKEN_KEY`, `PIPELINE_TOKEN`, `INTERNAL_SHARED_KEY` as env; job records at `jobs/<jobId>.json` with `artifactId`, `tier`, `state`, `expiresAt` (read by `pipelines/artifact-gc.yml`) |
-| scanner-worker | same storage/queue variables plus `SERVING_CONTAINER`, `DEFENDER_WAIT_SECONDS`, `INTAKE_INTERNAL_URL`, `ADO_ORG_URL`, `ADO_PROJECT`, `ADO_PIPELINE_ID`, `RUNTIME_MANIFEST_PATH`, `WORK_DIR`; health on port 8081; triggers the pipeline with `templateParameters: { jobId, artifactId }` (artifactId is needed by `render.sh`; DESIGN §6.12 lists jobId only) |
-| static-gateway | `SERVE_ROOT=/srv` (read-only), `ARTIFACT_DOMAIN`, `SHELL_URL`, secret `VIEW_TOKEN_KEY` |
-| viewer-shell | `AUTH_MODE=entra`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `REDIRECT_URI`, `SHELL_URL`, `ARTIFACT_DOMAIN`, `INTAKE_URL`, secrets `AZURE_CLIENT_SECRET`, `INTERNAL_SHARED_KEY` |
+What is left needs the cluster, not more reading:
+
+| Item | Needs | Verification |
+|---|---|---|
+| Workload Identity: `intake-api`, `scanner-worker`, `static-gateway`'s federated credential resolves to a token `DefaultAzureCredential` can use against Storage, Service Bus, Key Vault and (scanner-worker only) Azure DevOps | the AKS OIDC issuer binding and the RBAC `infra/bicep` assigns to each identity, all actually applied | publish `tests/corpus/static-ok` for real; a job stuck in `scanning` with no scanner error is this failing silently — `kubectl -n artifacts-system logs deploy/scanner-worker --since=10m` |
+| Secrets Store CSI mirrors every key this pass wired up — `intake-api-secrets` (now 4 keys, incl. the new `public-base-url`) and `viewer-shell-secrets` (now 3 keys, incl. the renamed `entra-shell-client-secret`→`ENTRA_CLIENT_SECRET` and the new `shell-session-key`) — into the right env var names | the two new Key Vault secrets created; `infra/README.md` step 4's checklist updated to include them (flagged, not fixed here — outside this task's two directories) | `kubectl -n artifacts-system exec deploy/intake-api -- env \| cut -d= -f1 \| sort` (names only, never the values) lists `PUBLIC_BASE_URL` |
+| `GET /healthz` on static-gateway's main port and scanner-worker's `HEALTH_PORT` (8081, named port `health` in `scanner-worker.yaml`) actually exists and answers 200 | T16 and T17 landing in `static-gateway/` and `scanner/` (in progress alongside this task) | pods go `Ready`; `kubectl -n artifacts-static exec deploy/static-gateway -- wget -qO- localhost:8080/healthz` |
+| scanner-worker's identity has `Queue builds` on the one Azure DevOps pipeline (integration item I8) | a person, in Azure DevOps | trigger a real python publish; `awaiting_approval` reached with no 401/403 in the worker's logs |
 
 ## Notes on specific choices
 

@@ -10,7 +10,8 @@
 # user-assigned identity attached to the node pool's VMSS, not the pod's workload identity.
 #
 # Everything for namespace artifacts-static is in this one file: ServiceAccount, SecretProviderClass, PV/PVC,
-# Deployment, Service.
+# Deployment, Service. Env var names reconciled against static-gateway/README.md at M2 (T50); GET /healthz on
+# the main port (PORT, below) is landing in static-gateway/ right now (T16) — the probes already target it.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -137,7 +138,7 @@ spec:
               value: /srv
             - name: ARTIFACT_DOMAIN
               value: corp-artifacts.net
-            - name: SHELL_URL
+            - name: SHELL_ORIGIN
               value: https://artifacts.corp.com
           envFrom:
             - secretRef:

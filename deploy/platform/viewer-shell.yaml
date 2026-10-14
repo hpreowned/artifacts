@@ -1,6 +1,9 @@
-# viewer-shell (agent-serve's code, DESIGN §3, D8). MSAL sign-in, audit log line per view, mints a view token
-# through intake-api's internal /v1/view-token, renders the iframe page. Entra values come from
-# infra/entra/verify.sh; the client secret is Key Vault secret entra-shell-client-secret via the CSI driver.
+# viewer-shell (DESIGN §3, D8). MSAL sign-in, audit log line per view, mints a view token through intake-api's
+# internal /v1/view-token, renders the iframe page. Entra values come from infra/entra/verify.sh; the client
+# secret and the shell session signing key are Key Vault secrets via the CSI driver (viewer-shell-secrets).
+# Env var names reconciled against viewer-shell/README.md at M2 (T50): there is no AUTH_MODE or REDIRECT_URI
+# in the real app — DEV_AUTH unset is how Entra mode is selected (never set it here), and the redirect URI is
+# built internally as ${SHELL_ORIGIN}/auth/callback.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,23 +41,20 @@ spec:
           env:
             - name: PORT
               value: "8080"
-            - name: AUTH_MODE
-              value: entra              # the dev bypass (T21) must be off here
-            - name: AZURE_TENANT_ID
+            # DEV_AUTH is deliberately absent: that is what selects real Entra sign-in (never set it here).
+            - name: ENTRA_TENANT_ID
               value: "<tenant-id>"
-            - name: AZURE_CLIENT_ID
+            - name: ENTRA_CLIENT_ID
               value: "<artifacts-viewer-shell-app-id>"
-            - name: REDIRECT_URI
-              value: https://artifacts.corp.com/auth/callback
-            - name: SHELL_URL
+            - name: SHELL_ORIGIN         # also builds the Entra redirect URI ${SHELL_ORIGIN}/auth/callback
               value: https://artifacts.corp.com
             - name: ARTIFACT_DOMAIN
               value: corp-artifacts.net
-            - name: INTAKE_URL
+            - name: INTAKE_INTERNAL_URL
               value: http://intake-api.artifacts-system.svc:8080
           envFrom:
             - secretRef:
-                name: viewer-shell-secrets   # AZURE_CLIENT_SECRET, INTERNAL_SHARED_KEY
+                name: viewer-shell-secrets   # ENTRA_CLIENT_SECRET, SHELL_SESSION_KEY, INTERNAL_SHARED_KEY
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

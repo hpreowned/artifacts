@@ -3,7 +3,9 @@
 #      (label form 2026-10-28T00-00-00Z: fixed-width UTC, so text comparison orders correctly).
 #   2. Delete serving/<id>/ for every expired static artifact listed by intake-api's job records
 #      (jobs/<jobId>.json with artifactId, tier, state, expiresAt) and post `expired` for each.
-# Same pool and AKS service connection as artifact-python-deploy.yml. Variable group artifacts-platform.
+# Same pool, AKS service connection and INTAKE_EVENTS_URL convention as artifact-python-deploy.yml: the
+# variable is the bare intake base URL, every callback posts to <url>/v1/publish/<jobId>/events (the
+# contracts/intake-openapi.yaml path). Variable group artifacts-platform.
 schedules:
   - cron: "0 3 * * *"
     displayName: Nightly artifact GC
@@ -83,7 +85,7 @@ jobs:
                 echo "deleting serving/$artifactId/"
                 az storage blob delete-batch --auth-mode login --account-name "$acct" --source serving --pattern "$artifactId/*"
               fi
-              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/$jobId/events" \
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/$jobId/events" \
                 -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
                 -d '{"state":"expired","message":"removed by artifact-gc"}' || echo "callback failed for $jobId"
             done < expired.tsv

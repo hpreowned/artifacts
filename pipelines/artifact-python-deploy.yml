@@ -1,23 +1,23 @@
 # Deploys one approved Python artifact, DESIGN §6.12, D10, D12.
 # Triggered by the scanner worker: POST .../_apis/pipelines/<id>/runs?api-version=7.1 with
-# templateParameters { jobId, artifactId } (artifactId is needed by render.sh; see deploy/README.md).
+# templateParameters { jobId } — that is all `scanner/src/pipeline.ts` sends. Everything else (artifactId,
+# expiresAt, entrypoint style) is read from the job record `jobs/<jobId>.json` in the Fetch stage below.
+# The job record (intake-api/src/job.ts JobRecord) carries no field for "streamlit vs fastapi": its
+# `manifest.entrypoint` is only the file name ("app.py"), never the framework. So entrypoint style is derived
+# by parsing app.py's imports with python3's stdlib `ast` module (same technique as scanner/imports.py) —
+# streamlit if it imports streamlit, else fastapi. If a future contract change adds an explicit field to the
+# job record, prefer it over this derivation.
 # Human approval is the check on Environment artifacts-dynamic (group artifacts-approvers, 7 days), not YAML.
 #
 # Variable group artifacts-platform (Key Vault-linked for the secret):
 #   PIPELINE_TOKEN        secret, Key Vault secret pipeline-token
-#   INTAKE_EVENTS_URL     http://intake.artifacts.internal:8080/v1/publish   (callback: <url>/<jobId>/events)
+#   INTAKE_EVENTS_URL     http://intake.artifacts.internal:8080   (base only; every callback below posts to
+#                         <url>/v1/publish/<jobId>/events, the exact contracts/intake-openapi.yaml path)
 #   STORAGE_ACCOUNT       <storage-account>
 #   PYTHON_RUNTIME_IMAGE  jfrog.corp.com/artifacts/python-runtime@sha256:<digest>
 parameters:
   - name: jobId
     type: string
-  - name: artifactId
-    type: string
-  - name: entrypoint
-    displayName: Entrypoint (auto = detect from app.py)
-    type: string
-    default: auto
-    values: [auto, streamlit, fastapi]
 
 trigger: none
 pr: none
@@ -32,11 +32,29 @@ variables:
 
 stages:
   - stage: Fetch
-    displayName: Fetch and scan
+    displayName: Fetch job record, bundle and scan
     jobs:
       - job: fetch
         steps:
           - checkout: self
+          - task: AzureCLI@2
+            displayName: Download job record (jobs/<jobId>.json)
+            name: jobrecord
+            inputs:
+              azureSubscription: <storage-connection>
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az storage blob download --auth-mode login --account-name "$(STORAGE_ACCOUNT)" \
+                  -c jobs -n "${{ parameters.jobId }}.json" -f job.json
+                artifactId="$(jq -r '.artifactId' job.json)"
+                # Reformat the job record's expiresAt (Date.toISOString(), fractional seconds) to the
+                # RFC 3339 whole-second form render.sh and template.yaml's expires-at label require.
+                expiresAt="$(date -u -d "$(jq -r '.expiresAt' job.json)" +%Y-%m-%dT%H:%M:%SZ)"
+                echo "artifactId=$artifactId expiresAt=$expiresAt"
+                echo "##vso[task.setvariable variable=artifactId;isOutput=true]$artifactId"
+                echo "##vso[task.setvariable variable=expiresAt;isOutput=true]$expiresAt"
           - task: AzureCLI@2
             displayName: Download bundle from intake
             inputs:
@@ -61,6 +79,23 @@ stages:
             displayName: Mark rejected on gitleaks finding
             name: verdict
             condition: failed()
+          - script: |
+              set -euo pipefail
+              entry="$(python3 -c "
+              import ast
+              tree = ast.parse(open('bundle/app.py', encoding='utf-8').read())
+              names = set()
+              for node in ast.walk(tree):
+                  if isinstance(node, ast.Import):
+                      names.update(n.name.split('.')[0] for n in node.names)
+                  elif isinstance(node, ast.ImportFrom) and node.module:
+                      names.add(node.module.split('.')[0])
+              print('streamlit' if 'streamlit' in names else 'fastapi')
+              ")"
+              echo "entrypoint=$entry"
+              echo "##vso[task.setvariable variable=entrypoint;isOutput=true]$entry"
+            displayName: Derive entrypoint style from app.py imports
+            name: entrypoint
           - task: SonarQubePrepare@7
             displayName: Sonar prepare (advisory)
             continueOnError: true
@@ -82,7 +117,7 @@ stages:
             displayName: Publish bundle
           - script: |
               set -euo pipefail
-              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}/events" \
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
                 -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
                 -d "{\"state\":\"awaiting_approval\",\"runUrl\":\"$(runUrl)\",\"message\":\"gitleaks clean; Sonar report on the run; waiting for artifacts-approvers\"}"
             displayName: Callback awaiting_approval
@@ -95,6 +130,10 @@ stages:
     jobs:
       - deployment: deploy
         environment: artifacts-dynamic
+        variables:
+          artifactId: $[ stageDependencies.Fetch.fetch.outputs['jobrecord.artifactId'] ]
+          expiresAt: $[ stageDependencies.Fetch.fetch.outputs['jobrecord.expiresAt'] ]
+          entrypoint: $[ stageDependencies.Fetch.fetch.outputs['entrypoint.entrypoint'] ]
         strategy:
           runOnce:
             deploy:
@@ -104,7 +143,7 @@ stages:
                   artifact: bundle
                 - script: |
                     set -euo pipefail
-                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}/events" \
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
                       -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
                       -d "{\"state\":\"deploying\",\"runUrl\":\"$(runUrl)\"}"
                   displayName: Callback deploying
@@ -113,14 +152,8 @@ stages:
                 - script: |
                     set -euo pipefail
                     bundle="$(Pipeline.Workspace)/bundle"
-                    ttl="$(jq -r '.ttlDays' "$bundle/manifest.json")"
-                    expires="$(date -u -d "+${ttl} days" +%Y-%m-%dT%H:%M:%SZ)"
-                    entry="${{ parameters.entrypoint }}"
-                    if [ "$entry" = auto ]; then
-                      if grep -Eq '^(import|from) streamlit' "$bundle/app.py"; then entry=streamlit; else entry=fastapi; fi
-                    fi
-                    echo "artifact=${{ parameters.artifactId }} entrypoint=$entry expires=$expires image=$(PYTHON_RUNTIME_IMAGE)"
-                    deploy/python-artifact/render.sh "${{ parameters.artifactId }}" "$bundle/app.py" "$expires" "$entry" "$(PYTHON_RUNTIME_IMAGE)" \
+                    echo "artifact=$(artifactId) entrypoint=$(entrypoint) expires=$(expiresAt) image=$(PYTHON_RUNTIME_IMAGE)"
+                    deploy/python-artifact/render.sh "$(artifactId)" "$bundle/app.py" "$(expiresAt)" "$(entrypoint)" "$(PYTHON_RUNTIME_IMAGE)" \
                       > "$(Pipeline.Workspace)/manifests.yaml"
                   displayName: Render manifests
                 - task: KubernetesManifest@1
@@ -133,7 +166,7 @@ stages:
                     rolloutStatusTimeout: "180"
                 - script: |
                     set -euo pipefail
-                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}/events" \
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
                       -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
                       -d "{\"state\":\"live\",\"runUrl\":\"$(runUrl)\"}"
                   displayName: Callback live
@@ -162,7 +195,7 @@ stages:
               else
                 state=rejected; msg="approval declined or timed out in Azure DevOps"
               fi
-              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/${{ parameters.jobId }}/events" \
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
                 -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
                 -d "{\"state\":\"$state\",\"runUrl\":\"$(runUrl)\",\"message\":\"$msg\"}"
             displayName: Callback failed or rejected

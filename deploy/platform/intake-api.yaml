@@ -1,5 +1,5 @@
 # intake-api (agent-intake's code, DESIGN §3). No Kubernetes RBAC, no secrets in the manifest.
-# Environment variable names below are this directory's expectation of intake-api/README.md; reconcile at M2.
+# Environment variable names below are reconciled against intake-api/README.md and src/config.ts at M2 (T50).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,27 +39,23 @@ spec:
               value: "8080"
             - name: BACKEND
               value: azure            # anything else selects the in-memory implementations (CLAUDE.md)
-            - name: STORAGE_ACCOUNT
-              value: "<storage-account>"
-            - name: INTAKE_CONTAINER
+            - name: STORAGE_ACCOUNT_URL
+              value: "https://<storage-account>.blob.core.windows.net"
+            - name: STORAGE_CONTAINER_INTAKE
               value: intake
-            - name: JOBS_CONTAINER
+            - name: STORAGE_CONTAINER_JOBS
               value: jobs
-            - name: SERVICEBUS_NAMESPACE
+            - name: STORAGE_CONTAINER_SERVING
+              value: serving
+            - name: SERVICEBUS_FQDN
               value: "<servicebus-namespace>.servicebus.windows.net"
             - name: SCAN_QUEUE
-              value: artifact-scan
-            - name: PUBLIC_API_URL      # base of the uploadUrl returned by beginPublish (through APIM)
-              value: https://mcp.corp.com/artifacts
-            - name: SHELL_URL
+              value: artifact-scan     # must equal scanner-worker's SCAN_QUEUE: same queue, enqueuer and consumer
+            - name: SHELL_ORIGIN       # live artifact URL is ${SHELL_ORIGIN}/view/${artifactId}
               value: https://artifacts.corp.com
-            - name: ARTIFACT_DOMAIN
-              value: corp-artifacts.net
-            - name: MAX_UPLOAD_BYTES
-              value: "26214400"
           envFrom:
             - secretRef:
-                name: intake-api-secrets   # VIEW_TOKEN_KEY, PIPELINE_TOKEN, INTERNAL_SHARED_KEY
+                name: intake-api-secrets   # VIEW_TOKEN_KEY, PIPELINE_TOKEN, INTERNAL_SHARED_KEY, PUBLIC_BASE_URL
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -4,7 +4,7 @@ import type { Finding, Severity } from "../../intake-api/src/job.js";
 export const POLICY: Readonly<Record<string, Severity>> = {
   "IN-001": "deny", "IN-002": "deny", "IN-003": "deny", "IN-004": "deny", "IN-005": "deny", "IN-006": "deny",
   "IN-007": "deny", "IN-008": "deny",
-  "SEC-000": "warn", // not in contracts/findings.md: gitleaks binary missing or failed (reported in the final report)
+  "SEC-000": "warn",
   "SEC-001": "deny",
   "MAL-001": "deny", "MAL-002": "deny",
   "HTML-001": "deny", "HTML-002": "deny", "HTML-003": "deny", "HTML-004": "deny", "HTML-005": "deny",

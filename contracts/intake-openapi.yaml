@@ -6,7 +6,8 @@ info:
     Fronted by Azure API Management. The two operations marked `x-mcp-tool: true` are exposed by APIM as MCP tools
     (server name `artifacts-mcp`). Upload and finalize are reachable through APIM but are not tools.
     `/events` and `/view-token` are internal only and are never published through APIM.
-    Entra validation happens in APIM (see DESIGN.md §6.10); APIM forwards the caller identity as X-Publisher-Oid / X-Publisher-Upn.
+    APIM validates the Entra bearer (see DESIGN.md §6.10) and forwards it unchanged; intake-api verifies it again and derives
+    the caller identity from the token claims. No identity headers are trusted.
 servers:
   - url: https://mcp.corp.com/artifacts
     description: through App Gateway and APIM (public hostname, private backend)

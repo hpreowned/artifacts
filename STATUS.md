@@ -1,6 +1,6 @@
 # STATUS — single source of truth
 
-Updated: 2026-10-14 (end of day 1) by orchestrator (Claude Code, session 1).
+Updated: 2026-10-14 (end of day 3) by orchestrator (Claude Code, session 1).
 
 How this file works: `DESIGN.md` is the what and why (changes by PR). This file is where we are. Agents edit only the `Owner`, `State`, `Evidence` cells of their own task rows. The orchestrator owns milestones, integration items, the decisions log and the daily log. States: `todo`, `doing`, `blocked`, `done`.
 
@@ -98,3 +98,4 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 - 2026-10-14 — Day 2 start. Four Sonnet agents launched on the follow-ups and M2 readiness: scanner (T13, T14, T17), intake (T15, T16), platform (T50), runbook (T60).
 - 2026-10-14 — Day 2 close. All four Sonnet agents merged: T13–T17, T50, T60 done. Negative suite 22/22 on the merged stack (new `python-syntax-error` bundle). Unit suites: intake 14, scanner 69, gateway 22, shell 16, CLI 33, platform validate. `docs/M2-RUNBOOK.md` (30 steps) and `tests/m2/` are the hand-off for M2; M2 is blocked only on I7 (Defender) and the VNet-pool half of I8, plus the viewer-shell app registration from I1. Filed T18, T51.
 - 2026-10-14 — Day 3 start. Two Sonnet agents: gatekey (T18, header-spoofing gap) and pipeline (T51, Report stage conditions).
+- 2026-10-14 — Day 3 close. T18 and T51 merged. intake-api now verifies the user's Entra token itself (no shared key, by the user's decision); APIM stops projecting identity headers; `deploy/networkpolicy-system.yaml` scopes ingress to intake-api. Pipeline failures post their real cause; deployment job checks out the repo. Suites: intake 25, CLI 33, validate clean, negative 22/22. Open: T52 (approval decline vs timeout). M2 awaits I7, the VNet-pool half of I8, and the viewer-shell app registration.

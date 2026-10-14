@@ -27,6 +27,15 @@
 # Needs: kubectl (pointed at the right context), node (artifactctl), python3, curl.
 set -euo pipefail
 
+# Against a cluster-deployed intake-api (no DEV_AUTH) a real Entra token is required. Same source as
+# tests/m2/cluster-negative.sh: set ARTIFACTS_MCP_RESOURCE to the artifacts-mcp Application ID URI and the
+# token is fetched here; ARTIFACTS_DEV_OID alone only works against the local dev stack.
+if [ -z "${ARTIFACTS_TOKEN:-}" ] && [ -n "${ARTIFACTS_MCP_RESOURCE:-}" ]; then
+  ARTIFACTS_TOKEN="$(az account get-access-token --resource "$ARTIFACTS_MCP_RESOURCE" --query accessToken -o tsv)"
+  [ -n "$ARTIFACTS_TOKEN" ] || { echo "az account get-access-token returned nothing; az login first" >&2; exit 1; }
+  export ARTIFACTS_TOKEN
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 

@@ -20,7 +20,7 @@
 #
 # Environment (same shape as tests/negative.sh, see tests/README.md and cli/README.md):
 #   ARTIFACTS_API_URL    Intake base URL. Default (artifactctl's own default): http://localhost:8080
-#   ARTIFACTS_TOKEN       Bearer. Not needed when ARTIFACTS_DEV_OID is set.
+#   ARTIFACTS_TOKEN       Entra bearer (or set ARTIFACTS_MCP_RESOURCE and it is fetched). Required against a cluster.
 #   ARTIFACTS_DEV_OID     Required for a direct (non-APIM) connection in production mode: intake-api
 #                          requires the X-Publisher-Oid/-Upn headers to be present on beginPublish, and
 #                          this is what makes artifactctl send them. Run tests/m2/cluster-negative.sh
@@ -31,6 +31,15 @@
 # Needs: node (artifactctl), python3. No secrets: the EICAR string is assembled at run time, never
 # committed, and no credential is read or printed by this script.
 set -euo pipefail
+
+# Against a cluster-deployed intake-api (no DEV_AUTH) a real Entra token is required. Same source as
+# tests/m2/cluster-negative.sh: set ARTIFACTS_MCP_RESOURCE to the artifacts-mcp Application ID URI and the
+# token is fetched here; ARTIFACTS_DEV_OID alone only works against the local dev stack.
+if [ -z "${ARTIFACTS_TOKEN:-}" ] && [ -n "${ARTIFACTS_MCP_RESOURCE:-}" ]; then
+  ARTIFACTS_TOKEN="$(az account get-access-token --resource "$ARTIFACTS_MCP_RESOURCE" --query accessToken -o tsv)"
+  [ -n "$ARTIFACTS_TOKEN" ] || { echo "az account get-access-token returned nothing; az login first" >&2; exit 1; }
+  export ARTIFACTS_TOKEN
+fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"

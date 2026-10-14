@@ -91,7 +91,7 @@ export class IntakeClient {
     return h;
   }
 
-  private async send(method: string, url: string, headers: Record<string, string>, body?: BodyInit): Promise<{ status: number; text: string }> {
+  private async send(method: string, url: string, headers: Record<string, string>, body?: string | Uint8Array): Promise<{ status: number; text: string }> {
     let res: Response;
     try {
       const init: RequestInit = { method, headers, signal: AbortSignal.timeout(this.timeoutMs) };

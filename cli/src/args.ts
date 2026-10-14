@@ -13,7 +13,8 @@ environment:
   ARTIFACTS_DEV_OID   dev only: sent as X-Publisher-Oid / X-Publisher-Upn (<oid>@dev)
   ARTIFACTS_PREFLIGHT path to preflight.sh (default: skill/publish-to-aks/scripts/preflight.sh in this repo)
 
-exit codes: 0 live or awaiting_approval, 3 rejected, 4 failed/expired/timeout, 2 network, 1 usage or API error
+exit codes: 0 live, awaiting_approval or preflight clean; 3 rejected or preflight findings;
+            4 failed/expired/timeout; 2 network; 1 usage or API error
 `;
 
 export type Command =

@@ -7,3 +7,4 @@ dist/
 .claude/launch.json
 **/coverage/
 *.tsbuildinfo
+.worktrees/

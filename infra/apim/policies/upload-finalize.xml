@@ -1,0 +1,23 @@
+<!-- Operation scope for PUT /v1/publish/{jobId}/upload and POST /v1/publish/{jobId}/finalize.
+     No Entra validation: the bearer is the one-time upload token and intake-api validates it.
+     32 MiB request cap (33554432 bytes), rate limit keyed on the bearer token, caller-supplied
+     X-Publisher-* headers stripped so only APIM-set identity reaches intake-api. -->
+<policies>
+  <inbound>
+    <base />
+    <choose>
+      <when condition="@(!context.Request.Headers.ContainsKey("Authorization"))">
+        <return-response>
+          <set-status code="401" reason="Unauthorized" />
+        </return-response>
+      </when>
+    </choose>
+    <rate-limit-by-key calls="30" renewal-period="60" counter-key="@(context.Request.Headers.GetValueOrDefault("Authorization", ""))" />
+    <validate-content unspecified-content-type-action="ignore" max-size="33554432" size-exceeded-action="prevent" errors-variable-name="requestBodyValidation" />
+    <set-header name="X-Publisher-Oid" exists-action="delete" />
+    <set-header name="X-Publisher-Upn" exists-action="delete" />
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>

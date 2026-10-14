@@ -1,0 +1,13 @@
+<!-- Operation scope for the x-internal operations imported from contracts/intake-openapi.yaml
+     (POST /v1/publish/{jobId}/events, POST /v1/view-token). They must never be reachable through
+     APIM; the import brings them in, this policy hides them. Also delete them in the portal if you prefer. -->
+<policies>
+  <inbound>
+    <return-response>
+      <set-status code="404" reason="Not Found" />
+    </return-response>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>

@@ -1,0 +1,26 @@
+<!-- GET /.well-known/oauth-protected-resource/artifacts-mcp/mcp
+     Protected Resource Metadata (RFC 9728), DESIGN.md §6.10. Served by APIM, never reaches a backend.
+     "resource" must equal the connector URL and the Entra Application ID URI byte for byte. -->
+<policies>
+  <inbound>
+    <base />
+    <return-response>
+      <set-status code="200" reason="OK" />
+      <set-header name="Content-Type" exists-action="override">
+        <value>application/json</value>
+      </set-header>
+      <set-header name="Cache-Control" exists-action="override">
+        <value>public, max-age=300</value>
+      </set-header>
+      <set-body>{
+  "resource": "https://mcp.corp.com/artifacts-mcp/mcp",
+  "authorization_servers": ["https://login.microsoftonline.com/{{tenant-id}}/v2.0"],
+  "scopes_supported": ["https://mcp.corp.com/artifacts-mcp/mcp/artifacts.publish"],
+  "bearer_methods_supported": ["header"]
+}</set-body>
+    </return-response>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>

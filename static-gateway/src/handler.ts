@@ -31,6 +31,16 @@ export function createHandler(config: GatewayConfig, now: Clock = () => Math.flo
   }
 
   return async (req, res) => {
+    // 0. The kubelet probe (deploy/platform/static-gateway.yaml) sends no artifact Host at all, so this
+    // must answer before rule 1 parses one, with any Host header or none. Never falls through to the
+    // file server below, even for a Host that resolves to a real, live artifact.
+    if ((req.url ?? '/').split('?')[0] === '/healthz') {
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      return void res.end(JSON.stringify({ ok: true }));
+    }
+
     applySecurityHeaders(res, config.shellOrigin);
 
     // 1. Host → artifact id.

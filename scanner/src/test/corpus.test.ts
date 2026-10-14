@@ -87,9 +87,19 @@ test("Defender Malicious rejects with MAL-001; Error fails with MAL-002", async 
 
 test("a missing bundle fails the job; a non-scanning job is left alone", async () => {
   const job = await runBundle(h, Buffer.alloc(0), STATIC_MANIFEST);
-  assert.equal(job.state, "rejected", "an empty upload is not a zip: IN-001");
-  assert.ok(job.findings.some((f) => f.rule === "IN-001"));
+  assert.equal(job.state, "rejected", "an empty upload is not a zip: IN-009");
+  assert.ok(job.findings.some((f) => f.rule === "IN-009"));
   const live = await runBundle(h, await zipDir(join(CORPUS, "static-ok")), STATIC_MANIFEST, { state: "live" });
   assert.equal(live.state, "live");
   assert.equal(live.findings.length, 0, "untouched");
+});
+
+// IN-009: corrupt/unreadable archives (not representable as a tests/corpus bundle, which is zipped by the
+// test harness itself) go through the worker directly with a non-zip byte string as the "upload". See
+// tests/README.md "Cases not representable as corpus bundles".
+test("IN-009: a non-zip upload is rejected, distinct from an oversized-but-readable one (IN-001)", async () => {
+  const job = await runBundle(h, Buffer.from("this is definitely not a zip file"), STATIC_MANIFEST);
+  assert.equal(job.state, "rejected");
+  assert.deepEqual([...new Set(job.findings.map((f) => f.rule))], ["IN-009"]);
+  assert.match(job.summary ?? "", /blocking finding/);
 });

@@ -11,7 +11,7 @@ export interface PythonOptions {
   timeoutMs?: number;
 }
 
-const RULE_RE = /^PY-00[1-5]$/;
+const RULE_RE = /^PY-00[1-6]$/;
 
 export async function pythonChecks(dir: string, opts: PythonOptions): Promise<Finding[]> {
   const { stdout, stderr, code } = await run(opts.pythonBin, [opts.importsScript, dir, opts.runtimeManifestPath], opts.timeoutMs ?? 60_000);

@@ -1,0 +1,43 @@
+# Scoped to scanner/Dockerfile (BuildKit convention: <dockerfile>.dockerignore next to the Dockerfile,
+# resolved against the build context, which is the repo root for this build — see scanner/Dockerfile).
+# Everything here is either not needed to build or run the scanner image, or is excluded for size.
+.git
+.worktrees
+node_modules
+dist
+*.tsbuildinfo
+*.log
+.DS_Store
+.env
+.env.*
+**/coverage
+**/test
+**/*.test.ts
+
+# the other services' own sources and Dockerfiles: irrelevant to this build
+cli
+deploy
+docs
+infra
+pipelines
+python-runtime
+skill
+static-gateway
+viewer-shell
+
+# test fixtures and docs not needed inside the image (tests/runtime-manifest.python-1.json is copied in
+# explicitly by scanner/Dockerfile and must stay included)
+tests/corpus
+tests/m2
+tests/lib
+tests/negative.sh
+tests/make-eicar.sh
+tests/dev-stack.sh
+
+# top-level docs and generated pages
+*.md
+status.html
+walkthrough.html
+walkthrough.artifact.html
+gen-status.py
+gen-walkthrough.py

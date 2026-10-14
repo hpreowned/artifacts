@@ -19,7 +19,7 @@ function contractRules(): Record<string, string> {
 
 test("every contract rule has the contract severity, and nothing else is in the table", () => {
   const contract = contractRules();
-  assert.equal(Object.keys(contract).length, 27, "parsed the whole findings table");
+  assert.equal(Object.keys(contract).length, 29, "parsed the whole findings table");
   for (const [rule, severity] of Object.entries(contract)) assert.equal(POLICY[rule], severity, rule);
   const extra = Object.keys(POLICY).filter((r) => !(r in contract));
   assert.deepEqual(extra, [], "policy.ts must not carry rules the contract does not");

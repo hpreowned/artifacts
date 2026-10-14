@@ -54,8 +54,8 @@ test("PY-005: threading and asyncio are warnings", async () => {
   assert.deepEqual(await check({ "app.py": "import threading\nimport asyncio\nfrom concurrent.futures import ThreadPoolExecutor\n" }), ["PY-005@1", "PY-005@2", "PY-005@3"]);
 });
 
-test("a file that does not parse is reported, not crashed on", async () => {
-  assert.deepEqual(await check({ "app.py": "def broken(:\n    pass\n" }), ["PY-001@1"]);
+test("a file that does not parse is reported under its own rule, not crashed on", async () => {
+  assert.deepEqual(await check({ "app.py": "def broken(:\n    pass\n" }), ["PY-006@1"]);
 });
 
 test("a broken scanner invocation throws so the job fails rather than passes", async () => {

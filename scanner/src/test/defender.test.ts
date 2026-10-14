@@ -11,9 +11,11 @@ test("fake reader: clean by default, malicious set, forced results", async () =>
   assert.equal(await r.result("job_ok"), "Not scanned");
 });
 
-test("tag lookup accepts Defender's key and the short form; unknown values never pass", () => {
-  assert.equal(scanResultTag({ "Malware Scanning scan result": "No threats found" }), "No threats found");
-  assert.equal(scanResultTag({ "Scan result": "Malicious", other: "x" }), "Malicious");
+test("tag lookup accepts both documented tag keys (current and legacy), case-insensitively; unknown values never pass", () => {
+  assert.equal(scanResultTag({ "Scan result": "No threats found" }), "No threats found", "current key");
+  assert.equal(scanResultTag({ "Malware Scanning scan result": "Malicious" }), "Malicious", "legacy key");
+  assert.equal(scanResultTag({ "SCAN RESULT": "Malicious" }), "Malicious", "case-insensitive");
+  assert.equal(scanResultTag({ "malware scanning SCAN RESULT": "Malicious", other: "x" }), "Malicious", "legacy key, mixed case, alongside an unrelated tag");
   assert.equal(scanResultTag({ other: "x" }), undefined);
   assert.equal(normalizeResult(" no threats found "), "No threats found");
   assert.equal(normalizeResult("Malicious"), "Malicious");

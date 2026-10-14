@@ -95,6 +95,7 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 - 2026-10-14 `PUBLIC_BASE_URL` is plain config on the intake Deployment, not a Key Vault secret (orchestrator mis-brief corrected). `shell-session-key` added to the Key Vault checklist. Image builds for intake-api and scanner use the repo root as Docker context.
 - 2026-10-14 Header-spoofing gap on the intake listener filed as T18 (runbook agent finding); DESIGN §9 carries the bite. Not an M2 blocker on a dev namespace; required before M3 opens the APIM path.
 - 2026-10-14 **User decision:** no shared key between APIM and intake-api, no Key Vault for it. intake-api verifies the user's Entra token itself and derives identity from claims; APIM remains the authorization point (group membership). T18 re-briefed.
+- 2026-10-14 **User decision:** integration work (I1–I8, M2–M5) runs in a separate environment with Azure DevOps and Azure access; this environment finishes all code and produces the hand-off (M6). Deployment to the cluster is by Helm charts (M7, D13), replacing raw manifests and `render.sh`.
 
 ## Daily log (append-only, one line per day)
 

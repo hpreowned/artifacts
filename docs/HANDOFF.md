@@ -445,37 +445,31 @@ replacement for reading the step itself when you get there.
 
 ---
 
-## 7. What comes back
+## 7. What comes back — one-way environment protocol
 
-When you're done with a phase of work here, or periodically, bring the following back (by `git push` to
-`origin`, since the repo lives on GitHub and this environment can presumably reach it — fall back to a fresh
-`git bundle` the same way you received one, if not):
+The integration environment cannot send code back out (organizational restriction). The clone there is
+therefore **deploy-only, never upstream**. Treat the environment this repo came from as upstream and this
+clone as a disposable snapshot. Four rules keep that workable:
 
-- **`STATUS.md` row and daily-log updates.** Every task, milestone and integration-item row you touched,
-  plus one line per work session in the daily log (append-only, bottom of the file). This is the single
-  source of truth rule from §1 — it only works if you actually write to it, not just to your own notes.
-- **Resolved UNVERIFIED rows.** For each row in §6 you've confirmed or disproven, update the README it came
-  from (not this document — this document aggregates, it doesn't own the claims) and delete or correct the
-  row there. If the fix touches `contracts/` (frozen per `CLAUDE.md`), that's its own PR with the reason —
-  never a direct edit.
-- **Any `contracts/` change, as a PR with the reason.** `contracts/` (manifest schema, intake OpenAPI,
-  states, findings/rule IDs) is frozen; if real-world testing proves something in it wrong, open a PR that
-  says exactly what broke and why the contract — not the implementation — needs to change.
-- **Corpus additions from cluster findings.** If the cluster surfaces a bypass or an edge case the 22-bundle
-  `tests/corpus/` doesn't cover, add a bundle (`tests/corpus/<name>/` + `expected.json`) and the matching unit
-  test, same shape as the existing ones, so it becomes a permanent regression rather than a one-time cluster
-  observation.
-- **The Defender alert and browser-check evidence for M2.** Specifically: the `az security alert list` query
-  result (or a portal screenshot reference) proving the EICAR upload actually raised a Defender for Cloud
-  alert, and the completed `tests/m2/browser-checklist.md` with every item checked — both referenced from
-  M2's `STATUS.md` evidence cell, not just asserted there.
-- **The `az` commands and object ids you actually used, not secrets.** Record resource names, object ids,
-  client ids, tenant id, the resource group name, the AKS OIDC issuer URL — anything that would let someone
-  reproduce the setup by reading `STATUS.md` and this document together. Never record secret values, keys,
-  tokens, or connection strings, even "to save time next time" — the whole point of Key Vault in this design
-  is that nothing else needs to hold them.
+1. **Code flows forward only, in tagged snapshots.** Each copy carried in corresponds to a git tag
+   (`snapshot-1`, `snapshot-2`, ...) on upstream's `main`. `git describe --tags` (or the tag name noted at
+   copy time) tells you which snapshot you're running. Never let the clone become the only home of a code
+   change: an emergency patch made here is fine to unblock the day, but it must be reported back (rule 3)
+   or it dies on the next snapshot.
+2. **Environment-specific configuration lives OUTSIDE this clone.** Filled values files
+   (`charts/*/values.yaml` copies), `.bicepparam` with real ids, tenant/subscription ids, tokens, variable
+   groups — keep them in a separate directory or repo in this environment and pass them by path
+   (`helm -f /path/to/real-values.yaml`, `az deployment ... --parameters @/path/to/real.bicepparam`).
+   Then replacing the code snapshot is a plain overwrite that clobbers nothing you care about.
+3. **Findings travel back as information, not commits.** Whatever channel is allowed (notes, screenshots,
+   dictation), report per finding: the snapshot tag, the file and line, the symptom (exact command and
+   output), and the fix you applied or suggest. Upstream applies the canonical fix, re-tags, and the next
+   snapshot carries it. The same applies to resolved UNVERIFIED rows from §6 and to anything touching
+   `contracts/` (which stays frozen here too — patch it locally only if truly blocked, and flag it loudly).
+4. **STATUS.md splits roles.** The copy here is your live tracker for I1–I8 and M2–M5: update rows and the
+   daily log here as you work, and include the changed rows in your reports so upstream can mirror them.
+   Upstream's STATUS.md remains the source of truth for code tasks and decisions.
 
----
 
 ## 8. Known gaps still open in code
 

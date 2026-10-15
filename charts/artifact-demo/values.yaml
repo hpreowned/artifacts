@@ -1,0 +1,60 @@
+# Defaults are deliberately invalid/empty so a release always has to supply every real value, same pattern
+# as charts/artifact-python/values.yaml. See templates/_helpers.tpl "artifact-demo.validate" for the
+# fail-fast checks.
+
+# 12 lowercase alphanumeric chars (contracts/intake-openapi.yaml ArtifactId).
+artifactId: ""
+
+# RFC 3339 UTC, e.g. 2026-10-28T00:00:00Z. Stored on labels/annotations with ':' -> '-' (same form as
+# charts/artifact-python). Also shipped to the app itself as DEMO_EXPIRES_AT and to the browser as the
+# X-Demo-Expires response header (DESIGN §6.13 banner: "Demo environment. Data is not retained.
+# Expires <date>.").
+expiresAt: ""
+
+# Digest-pinned, tied to this artifactId: jfrog.corp.com/artifacts/demo-<artifactId>@sha256:<64 hex>.
+# Built per-demo by pipelines/artifact-demo-deploy.yml from node-demo-runtime/Dockerfile + the bundle; there
+# is no shared runtime image to mount code into, unlike charts/artifact-python.
+image: ""
+
+# Job id this release was deployed for (label only; not used for rendering logic).
+jobId: ""
+
+# Every path the app bundle writes to at runtime. Each becomes its own emptyDir, mounted over the baked
+# path so the baked (read-only-root) copy is shadowed by ephemeral, pod-lifetime storage. Must be absolute
+# paths. §6.13: "writable paths are ephemeral and die with the pod" -- this is that contract, enforced by
+# the chart, not by convention.
+writablePaths:
+  - /app/data
+  - /tmp
+
+# Shared sizeLimit applied to every writablePaths emptyDir (contracts/manifest.schema.json has no per-path
+# quota concept for the demo tier; one shared cap keeps the chart simple and matches the Python tier's
+# single tmp.sizeLimit).
+writablePathSizeLimit: 128Mi
+
+domain:
+  # <artifactId>.<artifactDomain> is the HTTPRoute hostname, same scheme as charts/artifact-python.
+  artifactDomain: corp-artifacts.net
+
+# Origin of the viewer shell that iframes this demo (DESIGN §6.13's CSP frame-ancestors; matches
+# viewer-shell's own frame-src pin to the artifact domain, from the other direction). "https://<domains.shell>"
+# in charts/artifacts-platform/values.yaml's terms -- not wired automatically because this is a separate
+# chart/release with no access to that values tree; set explicitly per environment.
+shellOrigin: https://artifacts.corp.com
+
+gateway:
+  name: artifacts-internal
+  namespace: artifacts-system
+  sectionName: content
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+    ephemeral-storage: 256Mi

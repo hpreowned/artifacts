@@ -1,0 +1,483 @@
+# Deploys one approved demo-tier artifact, DESIGN D14, §6.13, D12, D13. The demo tier follows the Python
+# tier's state machine verbatim (contracts/states.md: "The demo tier ... uses the python tier's transitions
+# verbatim; its pipeline is `artifact-demo-deploy`"), so this file's shape, failure-callback pattern (T51)
+# and approval-outcome query (T52) are adapted from `pipelines/artifact-python-deploy.yml` verbatim where
+# the demo tier does not differ. What differs: there is no shared curated runtime image to mount an app
+# into (python-runtime); every demo gets its own image, baked per-job from `node-demo-runtime/Dockerfile` +
+# the bundle, which is why this file has an extra stage (Build) between Fetch and the approval-gated Deploy.
+#
+# Triggered by the scanner worker the same way as the Python pipeline: POST
+# .../_apis/pipelines/<id>/runs?api-version=7.1 with templateParameters { jobId } only. Everything else
+# (artifactId, expiresAt) is read from the job record `jobs/<jobId>.json` in the Fetch stage below — see
+# `pipelines/artifact-python-deploy.yml`'s header comment for the full citation of why jobId is the only
+# parameter (D12, intake-api/src/job.ts JobRecord). Interface this pipeline expects from scanner/: a
+# tier=demo job routes to *this* pipeline's id, not the Python one's — that routing lives in
+# scanner/src/pipeline.ts, owned by agent-demo-scanner, and is not implemented as of this file (flagged in
+# the final report).
+# Human approval is the check on Environment artifacts-dynamic (same Environment, same Entra group and
+# timeout the Python tier uses — one shared approval queue for every dynamic-tier artifact), not YAML.
+#
+# Variable group artifacts-platform (same group the Python pipeline uses):
+#   PIPELINE_TOKEN        secret, Key Vault secret pipeline-token
+#   INTAKE_EVENTS_URL     http://intake.artifacts.internal:8080   (base only; every callback below posts to
+#                         <url>/v1/publish/<jobId>/events, the exact contracts/intake-openapi.yaml path)
+#   STORAGE_ACCOUNT       <storage-account>
+#
+# -----------------------------------------------------------------------------------------------------------
+# T51-style step-scoped failure reporting (pattern adapted verbatim from artifact-python-deploy.yml, T51)
+# -----------------------------------------------------------------------------------------------------------
+# Every step that can fail has a `name:`, immediately followed by a guarded report step —
+# `condition: and(failed(), eq(variables['reported'], ''))` — that posts the real EventIn itself, inline, in
+# the same job, and sets `reported` so only the first real failure in a job is ever reported even though
+# `failed()` stays true afterwards. `reported` is job-scoped (Azure DevOps resets it per job), so Fetch,
+# Build and the Deploy deployment job each get their own independent latch — exactly like Fetch and Deploy
+# do in the Python pipeline.
+#
+# Failure -> callback mapping (contracts/states.md; demo uses the python tier's transitions verbatim):
+#   Fetch / jobrecord step fails            -> failed,   "fetch failed: job record download"
+#   Fetch / download (bundle) step fails    -> failed,   "fetch failed: bundle download"
+#   Fetch / bundle shape check fails        -> rejected, "bundle does not match the demo manifest contract
+#                                                          (missing package.json/package-lock.json, or a
+#                                                          forbidden node_modules/.env* present)"
+#   Fetch / gitleaks step fails             -> rejected, "gitleaks found a secret in the bundle (see the
+#                                                          gitleaks-report artifact on this run)"
+#   Fetch / any other step fails            -> failed,   "fetch failed: unspecified step (see run log)"
+#   Build / download bundle artifact fails  -> failed,   "build failed: download published bundle"
+#   Build / docker build/push fails         -> failed,   "build failed: docker build and push"
+#   Build / any other step fails            -> failed,   "build failed: unspecified step (see run log)"
+#   Build / npm audit                       -> no callback; `continueOnError: true` keeps Agent.JobStatus
+#                                                          out of Failed — the contract is explicit that this
+#                                                          is advisory only (report, don't block; see the
+#                                                          step below for why)
+#   Deploy / callback-deploying step fails  -> failed,   "deploy failed: callback deploying"
+#   Deploy / kubectl login fails            -> failed,   "deploy failed: kubectl login"
+#   Deploy / helm upgrade --install fails   -> failed,   "deploy failed: helm upgrade"
+#   Deploy / callback-live step fails       -> failed,   "deploy failed: callback to intake after a
+#                                                          successful rollout; the app may already be live,
+#                                                          verify by hand"
+#   Deploy / any other step fails           -> failed,   "deploy failed: unspecified step (see run log)"
+#   Deploy stage never started (Fetch and   -> rejected or expired, from the Approvals REST API — see the
+#     Build succeeded, Deploy == Skipped)              T52-style Report stage below; same query and mapping
+#                                                       as artifact-python-deploy.yml, just naming "Deploy".
+#
+# -----------------------------------------------------------------------------------------------------------
+# T52-style approval-outcome query (pattern adapted verbatim from artifact-python-deploy.yml, T52)
+# -----------------------------------------------------------------------------------------------------------
+# Same reasoning, same two Approvals REST endpoints, same three-hop Timeline walk (Stage -> Checkpoint ->
+# Checkpoint.Approval), same citations and the same UNVERIFIED-against-a-live-run caveat — see that file's
+# header comment for the full research trail; not re-derived here to keep this file's job single-sourced
+# with the original. Only the stage name being walked ("Deploy") is this file's own.
+parameters:
+  - name: jobId
+    type: string
+
+trigger: none
+pr: none
+
+pool:
+  name: <your-vnet-pool>
+
+variables:
+  - group: artifacts-platform
+  - name: runUrl
+    value: $(System.TeamFoundationCollectionUri)$(System.TeamProject)/_build/results?buildId=$(Build.BuildId)
+  - name: registry
+    value: jfrog.corp.com/artifacts
+
+stages:
+  - stage: Fetch
+    displayName: Fetch job record, bundle and scan
+    jobs:
+      - job: fetch
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: Download job record (jobs/<jobId>.json)
+            name: jobrecord
+            inputs:
+              azureSubscription: <storage-connection>
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az storage blob download --auth-mode login --account-name "$(STORAGE_ACCOUNT)" \
+                  -c jobs -n "${{ parameters.jobId }}.json" -f job.json
+                artifactId="$(jq -r '.artifactId' job.json)"
+                # Same reformat as artifact-python-deploy.yml: job.ts writes Date.toISOString() (fractional
+                # seconds); the chart's expiresAt label form wants whole-second RFC 3339.
+                expiresAt="$(date -u -d "$(jq -r '.expiresAt' job.json)" +%Y-%m-%dT%H:%M:%SZ)"
+                echo "artifactId=$artifactId expiresAt=$expiresAt"
+                echo "##vso[task.setvariable variable=artifactId;isOutput=true]$artifactId"
+                echo "##vso[task.setvariable variable=expiresAt;isOutput=true]$expiresAt"
+
+          - script: |
+              echo "##vso[task.setvariable variable=reported]1"
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"fetch failed: job record download\"}"
+            displayName: "Report: job record download failed"
+            name: jobrecordFailed
+            condition: and(failed(), eq(variables['reported'], ''))
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+          - task: AzureCLI@2
+            displayName: Download bundle from intake
+            name: download
+            inputs:
+              azureSubscription: <storage-connection>
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                az storage blob download --auth-mode login --account-name "$(STORAGE_ACCOUNT)" \
+                  -c intake -n "${{ parameters.jobId }}.zip" -f bundle.zip
+                mkdir -p bundle && unzip -q bundle.zip -d bundle
+                ls -la bundle
+
+          - script: |
+              echo "##vso[task.setvariable variable=reported]1"
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"fetch failed: bundle download\"}"
+            displayName: "Report: bundle download failed"
+            name: downloadFailed
+            condition: and(failed(), eq(variables['reported'], ''))
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+          - script: |
+              set -euo pipefail
+              # contracts/manifest.schema.json's demo-tier shape: package.json + package-lock.json required
+              # (lockfile mandatory), node_modules/ and .env* forbidden in the bundle. intake-api's own
+              # stage-1 manifest check already enforces the manifest fields themselves (tier/runtime/
+              # entrypoint/ttlDays); this is the bundle-shape half of that same contract, checked again here
+              # because the pipeline is what actually builds from these files.
+              test -f bundle/package.json
+              test -f bundle/package-lock.json
+              ! find bundle -maxdepth 2 -iname 'node_modules' -o -iname '.env*' | grep -q .
+            displayName: Check bundle shape (lockfile present, node_modules/.env* absent)
+            name: bundleShape
+
+          - script: |
+              echo "##vso[task.setvariable variable=reported]1"
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"rejected\",\"runUrl\":\"$(runUrl)\",\"message\":\"bundle does not match the demo manifest contract (missing package.json/package-lock.json, or a forbidden node_modules/.env* present)\"}"
+            displayName: "Report: bundle shape check failed"
+            name: bundleShapeFailed
+            condition: and(failed(), eq(variables['reported'], ''))
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+          - script: |
+              set -euo pipefail
+              gitleaks detect --source bundle --no-git --exit-code 1 \
+                --config "$(Build.SourcesDirectory)/.gitleaks.toml" \
+                --report-format sarif --report-path "$(Build.ArtifactStagingDirectory)/gitleaks.sarif"
+            displayName: gitleaks (deny on finding)
+            name: gitleaks
+
+          - script: |
+              echo "##vso[task.setvariable variable=reported]1"
+              echo "##vso[task.setvariable variable=gitleaksFailed]1"
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"rejected\",\"runUrl\":\"$(runUrl)\",\"message\":\"gitleaks found a secret in the bundle (see the gitleaks-report artifact on this run)\"}"
+            displayName: "Report: gitleaks found a secret"
+            name: gitleaksFailed
+            condition: and(failed(), eq(variables['reported'], ''))
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+          - publish: $(Build.ArtifactStagingDirectory)/gitleaks.sarif
+            artifact: gitleaks-report
+            displayName: Publish gitleaks report (only when gitleaks rejected the bundle)
+            name: publishGitleaksReport
+            condition: eq(variables['gitleaksFailed'], '1')
+            continueOnError: true
+
+          - publish: bundle
+            artifact: bundle
+            displayName: Publish bundle
+            name: publishBundle
+
+          - script: |
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"fetch failed: unspecified step (see run log)\"}"
+            displayName: "Report: unspecified fetch failure (catch-all)"
+            name: fetchCatchAll
+            condition: and(failed(), eq(variables['reported'], ''))
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+  - stage: Build
+    displayName: Bake the per-demo image, advisory audit, callback awaiting_approval
+    dependsOn: Fetch
+    condition: succeeded()
+    variables:
+      artifactId: $[ stageDependencies.Fetch.fetch.outputs['jobrecord.artifactId'] ]
+      expiresAt: $[ stageDependencies.Fetch.fetch.outputs['jobrecord.expiresAt'] ]
+    jobs:
+      - job: build
+        steps:
+          - checkout: self
+          - download: current
+            artifact: bundle
+            name: downloadArtifact
+
+          - script: |
+              echo "##vso[task.setvariable variable=reported]1"
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"build failed: download published bundle\"}"
+            displayName: "Report: bundle artifact download failed"
+            name: downloadArtifactFailed
+            condition: and(failed(), eq(variables['reported'], ''))
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+          - script: |
+              set -euo pipefail
+              # Assemble the build context: the fetched bundle plus the pipeline-owned Dockerfile template
+              # (node-demo-runtime/README.md: a bundle never ships its own Dockerfile).
+              bundle="$(Pipeline.Workspace)/bundle"
+              context="$(Agent.TempDirectory)/demo-build/${{ parameters.jobId }}"
+              mkdir -p "$context"
+              cp -r "$bundle"/. "$context"/
+              cp "$(Build.SourcesDirectory)/node-demo-runtime/Dockerfile" "$context/Dockerfile"
+              image="$(registry)/demo-$(artifactId):$(Build.BuildId)"
+              echo "##vso[task.setvariable variable=image;isOutput=true]$image"
+              docker build --pull -t "$image" "$context"
+              docker push "$image"
+              digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$image")"
+              echo "digest=$digest"
+              echo "##vso[task.setvariable variable=digest;isOutput=true]$digest"
+            displayName: docker build and push (node-demo-runtime + bundle)
+            name: dockerBuild
+
+          - script: |
+              echo "##vso[task.setvariable variable=reported]1"
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"build failed: docker build and push\"}"
+            displayName: "Report: docker build/push failed"
+            name: dockerBuildFailed
+            condition: and(failed(), eq(variables['reported'], ''))
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+          - script: |
+              # Advisory only: §6.13 states JavaScript server code gets no equivalent of the Python import
+              # allowlist, and DESIGN D14/this pipeline's own task row say the audit reports, it does not
+              # block. `continueOnError: true` keeps Agent.JobStatus out of Failed no matter the exit code,
+              # so this step can never trip the guarded failure-report steps around it (same contract Sonar
+              # has in artifact-python-deploy.yml: advisory, no quality-gate break — the report is what the
+              # human approver reads before clicking approve).
+              cd "$(Pipeline.Workspace)/bundle"
+              npm audit --audit-level=high --registry https://jfrog.corp.com/artifactory/api/npm/npm-remote/ \
+                || echo "npm audit found advisory-level findings (see log above); not blocking the build"
+            displayName: npm audit (advisory, does not block)
+            name: npmAudit
+            continueOnError: true
+
+          - script: |
+              set -euo pipefail
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"awaiting_approval\",\"runUrl\":\"$(runUrl)\",\"message\":\"image built and pushed; npm audit report on the run (advisory); waiting for artifacts-approvers\"}"
+            displayName: Callback awaiting_approval
+            name: callbackAwaitingApproval
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+          - script: |
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"build failed: unspecified step (see run log)\"}"
+            displayName: "Report: unspecified build failure (catch-all)"
+            name: buildCatchAll
+            condition: and(failed(), eq(variables['reported'], ''))
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+  - stage: Deploy
+    dependsOn: [Fetch, Build]
+    condition: succeeded()
+    variables:
+      artifactId: $[ stageDependencies.Fetch.fetch.outputs['jobrecord.artifactId'] ]
+      expiresAt: $[ stageDependencies.Fetch.fetch.outputs['jobrecord.expiresAt'] ]
+      digest: $[ stageDependencies.Build.build.outputs['dockerBuild.digest'] ]
+    jobs:
+      - deployment: deploy
+        environment: artifacts-dynamic
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self        # charts/artifact-demo lives in the repo; deployment jobs don't check out by default
+
+                - script: |
+                    echo "##vso[task.setvariable variable=reported]1"
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"deploying\",\"runUrl\":\"$(runUrl)\"}"
+                  displayName: Callback deploying
+                  name: callbackDeploying
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+                - script: |
+                    echo "##vso[task.setvariable variable=reported]1"
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: callback deploying\"}"
+                  displayName: "Report: callback-deploying failed"
+                  name: callbackDeployingFailed
+                  condition: and(failed(), eq(variables['reported'], ''))
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+                - task: Kubernetes@1
+                  displayName: kubectl login (AKS service connection; also used by helm below)
+                  name: kubectlLogin
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    namespace: artifacts-dynamic
+                    command: login
+
+                - script: |
+                    echo "##vso[task.setvariable variable=reported]1"
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: kubectl login\"}"
+                  displayName: "Report: kubectl login failed"
+                  name: kubectlLoginFailed
+                  condition: and(failed(), eq(variables['reported'], ''))
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+                - script: |
+                    set -euo pipefail
+                    echo "artifact=$(artifactId) expires=$(expiresAt) image=$(digest)"
+                    helm upgrade --install "demo-$(artifactId)" "$(Build.SourcesDirectory)/charts/artifact-demo" \
+                      --namespace artifacts-dynamic \
+                      --set artifactId="$(artifactId)" \
+                      --set expiresAt="$(expiresAt)" \
+                      --set image="$(digest)" \
+                      --set jobId="${{ parameters.jobId }}" \
+                      --wait --timeout 3m
+                  displayName: helm upgrade --install
+                  name: helmUpgrade
+
+                - script: |
+                    echo "##vso[task.setvariable variable=reported]1"
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: helm upgrade\"}"
+                  displayName: "Report: helm upgrade failed"
+                  name: helmUpgradeFailed
+                  condition: and(failed(), eq(variables['reported'], ''))
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+                - task: Kubernetes@1
+                  displayName: kubectl logout
+                  condition: always()
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    command: logout
+
+                - script: |
+                    set -euo pipefail
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"live\",\"runUrl\":\"$(runUrl)\"}"
+                  displayName: Callback live
+                  name: callbackLive
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+                - script: |
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: callback to intake after a successful rollout; the app may already be live, verify by hand\"}"
+                  displayName: "Report: callback-live failed (rollout likely succeeded)"
+                  name: callbackLiveFailed
+                  condition: and(failed(), eq(variables['reported'], ''))
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+                - script: |
+                    curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                      -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                      -d "{\"state\":\"failed\",\"runUrl\":\"$(runUrl)\",\"message\":\"deploy failed: unspecified step (see run log)\"}"
+                  displayName: "Report: unspecified deploy failure (catch-all)"
+                  name: deployCatchAll
+                  condition: and(failed(), eq(variables['reported'], ''))
+                  env:
+                    PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+
+  - stage: Report
+    displayName: Report approval declined or timed out
+    dependsOn: [Fetch, Build, Deploy]
+    condition: and(always(), eq(dependencies.Fetch.result, 'Succeeded'), eq(dependencies.Build.result, 'Succeeded'), eq(dependencies.Deploy.result, 'Skipped'))
+    jobs:
+      - job: report
+        # Needed for the Timeline and Approvals REST calls below (T52 pattern); see
+        # artifact-python-deploy.yml's header comment for the exact endpoints and the project permission
+        # this identity also needs (Reader role on the artifacts-dynamic Environment's security pane).
+        env:
+          SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        steps:
+          - checkout: none
+          - script: |
+              set -euo pipefail
+              org="$(System.TeamFoundationCollectionUri)"
+              project="$(System.TeamProject)"
+              auth=(-H "Authorization: Bearer $SYSTEM_ACCESSTOKEN")
+
+              # Walk this run's timeline: Stage "Deploy" -> child Checkpoint -> child Checkpoint.Approval.
+              # docs: https://learn.microsoft.com/en-us/rest/api/azure/devops/build/timeline/get?view=azure-devops-rest-7.1
+              timeline="$(curl -fsS "${auth[@]}" "${org}${project}/_apis/build/builds/$(Build.BuildId)/timeline?api-version=7.1")"
+              stage_id="$(echo "$timeline" | jq -r '.records[] | select(.type=="Stage" and .name=="Deploy") | .id' | head -n1)"
+              checkpoint_id="$(echo "$timeline" | jq -r --arg sid "$stage_id" '.records[] | select(.type=="Checkpoint" and .parentId==$sid) | .id' | head -n1)"
+              approval_id="$(echo "$timeline" | jq -r --arg cid "$checkpoint_id" '.records[] | select(.type=="Checkpoint.Approval" and .parentId==$cid) | .id' | head -n1)"
+              echo "stage=$stage_id checkpoint=$checkpoint_id approval=$approval_id"
+
+              state="unknown"; message=""
+              if [ -n "$approval_id" ] && [ "$approval_id" != "null" ]; then
+                # docs: https://learn.microsoft.com/en-us/rest/api/azure/devops/approvalsandchecks/approvals/get?view=azure-devops-rest-7.1
+                approval="$(curl -fsS "${auth[@]}" "${org}${project}/_apis/pipelines/approvals/${approval_id}?api-version=7.1")"
+                status="$(echo "$approval" | jq -r '.status')"
+                approver="$(echo "$approval" | jq -r '[.steps[]?.actualApprover.displayName, .steps[]?.assignedApprover.displayName] | map(select(. != null)) | first // "unknown approver"')"
+                modified="$(echo "$approval" | jq -r '.lastModifiedOn // ""')"
+                echo "approval status=$status approver=$approver modified=$modified"
+                case "$status" in
+                  rejected)
+                    state="rejected"; message="approval declined by ${approver} at ${modified}" ;;
+                  timedOut)
+                    state="expired"; message="approval check timed out (no response within the window) at ${modified}" ;;
+                  canceled)
+                    state="rejected"; message="approval canceled at ${modified}" ;;
+                  *)
+                    state="rejected"
+                    message="approval status '${status}' from the Approvals API did not map to rejected/expired; treating as rejected, check the Checks tab on this run" ;;
+                esac
+              else
+                state="rejected"
+                message="could not find this run's Checkpoint.Approval record via the Timeline API; falling back to the old behaviour, check the Checks tab on this run"
+              fi
+
+              curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events" \
+                -H "Authorization: Bearer ${PIPELINE_TOKEN}" -H "Content-Type: application/json" \
+                -d "$(jq -n --arg state "$state" --arg runUrl "$(runUrl)" --arg message "$message" '{state:$state, runUrl:$runUrl, message:$message}')"
+            displayName: Query Approvals API, callback rejected or expired
+            name: callbackRejectedOrExpired
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)

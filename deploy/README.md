@@ -97,3 +97,26 @@ What is left needs the cluster, not more reading:
 | Gateway API exact-host precedence over the wildcard route in Istio | `charts/artifacts-platform/templates/httproutes.yaml`, `charts/artifact-python/templates/httproute.yaml` | Phase 2 positive test |
 | Azure DevOps stage result strings used by the `always()` reporting job | `pipelines/artifact-python-deploy.yml` | decline one approval, read the callback |
 | ztunnel log text `policy rejection` and the metric label values in the audit procedure | this README | read one denied connection in the canary stage |
+
+## Demo tier (M8, DESIGN D14, §6.13)
+
+A third, time-boxed offering alongside the static and Python tiers: self-contained Node full-stack
+prototypes, approved by a human the same way a Python artifact is, torn down by the same nightly GC.
+
+| Path | Contents |
+|---|---|
+| `../charts/artifact-demo/` | Helm chart, one release per demo (`demo-<artifactId>`, namespace `artifacts-dynamic`): Deployment + Service + HTTPRoute, rendered from values (`artifactId`, `expiresAt`, `image`, `jobId`, `writablePaths`, `shellOrigin`). Unlike `charts/artifact-python`, the app is baked into the image — there is no ConfigMap/`appPy` value. Validated offline with `helm lint` and `charts/tests/demo-conformance.sh`. |
+| `../charts/tests/demo-conformance.sh` | Pattern-matched on `artifact-conformance.sh`: renders with a fake digest image under default and custom `writablePaths`, asserts the §6.6 security posture, the emptyDir mounts, the `ResponseHeaderModifier` CSP/`X-Demo-Expires` filter, labels/annotation and probe ports; asserts a bad `artifactId`, missing `expiresAt`, or tag-only/mismatched image is refused. |
+| `../node-demo-runtime/` | Pipeline-owned Dockerfile **template** (not a buildable image, not shipped by a bundle author): two-stage build on `jfrog.corp.com/docker/node:20-slim`, `npm ci --ignore-scripts` via the JFrog npm mirror, `npm run build --if-present`, then a pruned production runtime stage, `USER 65532:65532`, `CMD ["npm","run","start"]`. Instantiated once per demo job by `pipelines/artifact-demo-deploy.yml`'s Build stage, which copies this file into the fetched bundle's directory as the build context. |
+| `../pipelines/artifact-demo-deploy.yml` | Four stages — Fetch (job record, bundle, bundle-shape check, gitleaks), Build (assemble context, `docker build`/push, `npm audit --audit-level=high` as an *advisory* step, callback `awaiting_approval`), Deploy (Environment `artifacts-dynamic` approval gate, `helm upgrade --install`), Report (T52-style Approvals API query on a skipped Deploy stage). Adapts the Python pipeline's T51 step-scoped failure-reporting and T52 approval-outcome query verbatim; see that file's own header comment for the full citation trail. |
+| `../pipelines/artifact-gc.yml` | `gc_dynamic`'s release listing now matches `art-*` or `demo-*` (same expiry annotation, same `helm uninstall`) — one GC pass retires both tiers. |
+
+What needs the cluster (same caveat as the rest of this README — no `kubectl`, no Azure DevOps tenant while
+authoring this): `helm upgrade --install --wait` actually rolling out a demo release; the Gateway applying
+the `ResponseHeaderModifier` filter to real responses (confirm Istio's Gateway API implementation supports
+it at `gateway.networking.k8s.io/v1` the way `charts/artifact-demo/templates/httproute.yaml`'s header
+comment asserts); the deny-all egress NetworkPolicy already in `charts/artifacts-platform` actually blocking
+a demo pod's DNS and outbound calls; `docker build`/push from the pipeline's VNet pool against the JFrog npm
+mirror and Docker registry; and the Azure DevOps routing that sends a `tier: demo` job to this pipeline's id
+instead of the Python pipeline's (owned by `scanner/`, not this directory — flagged as an open interface in
+the T82 final report).

@@ -127,7 +127,7 @@ flowchart TB
     ENTRA[&quot;Entra ID&quot;]
   end
   subgraph cicd [&quot;Azure DevOps, your existing CI/CD&quot;]
-    ADO[&quot;Pipeline artifact-python-deploy&lt;br/&gt;gitleaks policy, Sonar advisory, Environment approval,&lt;br/&gt;kubectl apply via the AKS service connection&quot;]
+    ADO[&quot;Pipeline artifact-python-deploy&lt;br/&gt;gitleaks policy, Sonar advisory, Environment approval,&lt;br/&gt;helm upgrade via the AKS service connection&quot;]
   end
   subgraph aks [&quot;Private AKS cluster&quot;]
     INTAKE[&quot;Intake API&lt;br/&gt;orchestrates every job&quot;]
@@ -182,7 +182,7 @@ flowchart TB
     ENTRA[&quot;Entra ID&quot;]
   end
   subgraph cicd [&quot;Azure DevOps, your existing CI/CD&quot;]
-    ADO[&quot;Pipeline artifact-python-deploy&lt;br/&gt;gitleaks policy, Sonar advisory, Environment approval,&lt;br/&gt;kubectl apply via the AKS service connection&quot;]
+    ADO[&quot;Pipeline artifact-python-deploy&lt;br/&gt;gitleaks policy, Sonar advisory, Environment approval,&lt;br/&gt;helm upgrade via the AKS service connection&quot;]
   end
   subgraph aks [&quot;Private AKS cluster&quot;]
     INTAKE[&quot;Intake API&lt;br/&gt;orchestrates every job&quot;]
@@ -277,7 +277,8 @@ sequenceDiagram
   AN-&gt;&gt;GW: POST /v1/publish with Entra bearer token
   GW-&gt;&gt;ID: validate token, audience, scope
   ID--&gt;&gt;GW: valid, user oid
-  GW-&gt;&gt;IN: forward with X-Publisher-Oid
+  GW-&gt;&gt;IN: forward the bearer unchanged
+  IN-&gt;&gt;IN: verify the token itself (signature, issuer, audience, expiry); identity from claims
   IN--&gt;&gt;CW: jobId, uploadUrl, one-time uploadToken
   Note over AN,GW: replies travel back through APIM and the connector service
   CW-&gt;&gt;SB: run upload.sh dist/
@@ -324,7 +325,8 @@ sequenceDiagram
   AN-&gt;&gt;GW: POST /v1/publish with Entra bearer token
   GW-&gt;&gt;ID: validate token, audience, scope
   ID--&gt;&gt;GW: valid, user oid
-  GW-&gt;&gt;IN: forward with X-Publisher-Oid
+  GW-&gt;&gt;IN: forward the bearer unchanged
+  IN-&gt;&gt;IN: verify the token itself (signature, issuer, audience, expiry); identity from claims
   IN--&gt;&gt;CW: jobId, uploadUrl, one-time uploadToken
   Note over AN,GW: replies travel back through APIM and the connector service
   CW-&gt;&gt;SB: run upload.sh dist/
@@ -381,7 +383,7 @@ sequenceDiagram
     ADO-&gt;&gt;ADO: gitleaks under policy, Sonar scan attached as advisory report
     ADO-&gt;&gt;IN: state = awaiting_approval, run link
     APR-&gt;&gt;ADO: approve the Environment check, Entra group artifacts-approvers
-    ADO-&gt;&gt;K8: apply ConfigMap with app.py, Deployment, Service, HTTPRoute, TTL label, via the AKS service connection
+    ADO-&gt;&gt;K8: helm upgrade --install art-{id} (ConfigMap with app.py, Deployment, Service, HTTPRoute, expiry labels) via the AKS service connection
     K8-&gt;&gt;POL: admission review
     POL--&gt;&gt;K8: allowed only if image digest, security context and capabilities match policy
     K8-&gt;&gt;POD: schedule on the untrusted node pool
@@ -416,7 +418,7 @@ sequenceDiagram
     ADO-&gt;&gt;ADO: gitleaks under policy, Sonar scan attached as advisory report
     ADO-&gt;&gt;IN: state = awaiting_approval, run link
     APR-&gt;&gt;ADO: approve the Environment check, Entra group artifacts-approvers
-    ADO-&gt;&gt;K8: apply ConfigMap with app.py, Deployment, Service, HTTPRoute, TTL label, via the AKS service connection
+    ADO-&gt;&gt;K8: helm upgrade --install art-{id} (ConfigMap with app.py, Deployment, Service, HTTPRoute, expiry labels) via the AKS service connection
     K8-&gt;&gt;POL: admission review
     POL--&gt;&gt;K8: allowed only if image digest, security context and capabilities match policy
     K8-&gt;&gt;POD: schedule on the untrusted node pool

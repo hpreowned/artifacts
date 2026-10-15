@@ -314,7 +314,7 @@ EXPOSE 8080
 ```
 Versions above are placeholders to pin to what your CI resolves. `runtime-manifest.json` lists importable top-level module names; your CI also renders it to `reference/python-1-libraries.md` for the skill. Entrypoint is chosen by the intake API per runtime: `streamlit run /app/app.py --server.port=8080 --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false` or `uvicorn app:app --host 0.0.0.0 --port 8080 --app-dir /app`.
 
-### 6.6 Dynamic tier: Deployment (rendered by the pipeline from a template in the pipeline repo, denied by Azure Policy if it drifts)
+### 6.6 Dynamic tier: Deployment (rendered by the `charts/artifact-python` Helm chart, one release per artifact, denied by Azure Policy if it drifts)
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -465,12 +465,8 @@ APIM policy at MCP-server scope:
         </claim>
       </required-claims>
     </validate-azure-ad-token>
-    <set-header name="X-Publisher-Oid" exists-action="override">
-      <value>@(((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("oid", ""))</value>
-    </set-header>
-    <set-header name="X-Publisher-Upn" exists-action="override">
-      <value>@(((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("preferred_username", ""))</value>
-    </set-header>
+    <set-header name="X-Publisher-Oid" exists-action="delete" />
+    <set-header name="X-Publisher-Upn" exists-action="delete" />
   </inbound>
   <backend><base /></backend>
   <outbound><base /></outbound>
@@ -486,7 +482,7 @@ APIM policy at MCP-server scope:
   </on-error>
 </policies>
 ```
-`{{…}}` are APIM named values. Notes from the APIM MCP docs: never read `context.Response.Body` in MCP-server policies; set "number of payload bytes to log" to 0 at global scope; the external MCP server mode needs protocol 2025-06-18 or later, which does not apply here because APIM *is* the MCP server. APIM tiers with MCP support: Developer, Basic, Basic v2, Standard, Standard v2, Premium, Premium v2. Not Consumption.
+`{{…}}` are APIM named values. APIM is the authorization point (group membership via `validate-azure-ad-token`) and forwards the bearer unchanged; identity headers are deleted, never set, because intake-api verifies the token itself (T18, `intake-api/src/entra-token.ts`: RS256 against the tenant JWKS, issuer, audience, expiry, scope) and derives `oid`/`upn` from the claims. Notes from the APIM MCP docs: never read `context.Response.Body` in MCP-server policies; set "number of payload bytes to log" to 0 at global scope; the external MCP server mode needs protocol 2025-06-18 or later, which does not apply here because APIM *is* the MCP server. APIM tiers with MCP support: Developer, Basic, Basic v2, Standard, Standard v2, Premium, Premium v2. Not Consumption.
 
 **Network path.** Anthropic's outbound MCP calls come from `160.79.104.0/21`, IPv4 only, documented as stable. If your APIM is internal-mode, Microsoft's pattern is an internet-facing Application Gateway WAF_v2 exposing only the routes you choose; add a WAF custom rule allowing `/artifacts-mcp/*` from that range only. If your APIM is external-mode, an `ip-filter` policy at MCP-server scope does the same. Do **not** apply the Anthropic range to the upload route: the Cowork sandbox's egress address is not documented, and the one-time token is that route's authentication. Behind App Gateway, APIM's `context.Request.IpAddress` is the gateway's address; use the WAF rule or `X-Forwarded-For` for IP decisions.
 
@@ -540,21 +536,22 @@ stages:
               steps:
                 - download: current
                   artifact: bundle
-                - script: ./render.sh ${{ parameters.jobId }} bundle/app.py > manifests.yaml
-                - task: KubernetesManifest@1
-                  inputs:
-                    action: deploy
-                    kubernetesServiceConnection: <aks-connection>
-                    namespace: artifacts-dynamic
-                    manifests: manifests.yaml
+                - task: Kubernetes@1          # login only: provides the kubeconfig for the helm step
+                  inputs: { connectionType: Kubernetes Service Connection, kubernetesServiceEndpoint: <aks-connection>, command: login }
+                - script: >-
+                    helm upgrade --install "art-$(artifactId)" charts/artifact-python
+                    --namespace artifacts-dynamic
+                    --set artifactId=$(artifactId) --set-file appPy=bundle/app.py
+                    --set expiresAt=$(expiresAt) --set entrypoint=$(entrypoint)
+                    --set image=$(PYTHON_RUNTIME_IMAGE) --wait --timeout 3m
                 - script: >-
                     curl -fsS -X POST "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/events"
                     -H "Authorization: Bearer $(PIPELINE_TOKEN)" -H "Content-Type: application/json"
                     -d '{"state":"live"}'
 ```
-The Environment `artifacts-dynamic` carries the approval check (Entra group `artifacts-approvers`, timeout 7 days); it is configured on the Environment, not in YAML. Your policy template already injects gitleaks; the explicit step above shows where it lands. Sonar is advisory: no quality-gate break, the report link is what the approver reads. Callbacks: the Fetch stage posts `awaiting_approval` with the run URL; an `always()` job posts `failed` or `rejected` when a stage fails or the approval is declined. `render.sh` fills the §6.6 template from the pipeline repo.
+The Environment `artifacts-dynamic` carries the approval check (Entra group `artifacts-approvers`, timeout 7 days); it is configured on the Environment, not in YAML. Your policy template already injects gitleaks; the explicit step above shows where it lands. Sonar is advisory: no quality-gate break, the report link is what the approver reads. Callbacks: every step that can fail posts its own `EventIn` naming the real cause (T51, step-scoped conditions with a `reported` latch); when the Deploy stage is skipped, the Report stage queries the Approvals REST API with `$(System.AccessToken)` and posts `expired` on a timeout, `rejected` on a decline (T52). `artifactId`, `expiresAt` and the entrypoint come from the job record `jobs/<jobId>.json`, not from parameters.
 
-`artifact-gc.yml`: scheduled nightly, same pool and AKS service connection, `kubectl delete` of every object in `artifacts-dynamic` whose `artifacts.corp.com/expires-at` label is in the past, then `az storage blob delete-batch` on the expired `serving/<id>/` prefixes that intake-api lists.
+`artifact-gc.yml`: scheduled nightly, same pool and AKS service connection, `helm list -n artifacts-dynamic -o json` → read each `art-*` release's `artifacts.corp.com/expires-at` annotation → `helm uninstall` the expired ones, then `az storage blob delete-batch` on the expired `serving/<id>/` prefixes.
 
 ---
 
@@ -583,7 +580,7 @@ The Environment `artifacts-dynamic` carries the approval check (Entra group `art
 - App Gateway (or `ip-filter`): expose `mcp.corp.com/artifacts-mcp/*` and `/artifacts/v1/*/upload`, `/finalize`. Public DNS for `mcp.corp.com`.
 - Claude: Owner adds the connector with "Use your own OAuth client". Sign in. In a Cowork task, ask it to call `getPublishStatus` with a fake id.
 - Cowork egress: add `mcp.corp.com`. Upload the skill. In a Cowork task, run `upload.sh` against the mock upload endpoint.
-- **Gate:** APIM logs show a tool call with your `oid` in `X-Publisher-Oid`, and a sandbox `PUT` returned `201` through APIM. Nothing else proceeds until both are green. If the `PUT` is blocked, decide between changing the egress mode and the base64 fallback.
+- **Gate:** intake-api's log shows a tool call authenticated with your `oid` (derived from the verified token claims), and a sandbox `PUT` returned `201` through APIM. Nothing else proceeds until both are green. If the `PUT` is blocked, decide between changing the egress mode and the base64 fallback.
 
 **Phase 1: static tier end to end (3 days).**
 - intake-api, scanner Job (stages 1, 2, 4, 6), Defender for Storage on the artifact account (stage 3), Blob private endpoint, static-gateway with Blob CSI, viewer-shell with MSAL, internal Gateway with both listeners and Key Vault certs, HTTPRoutes.
@@ -689,6 +686,8 @@ Per-artifact CSP script hashes; per-user quotas; audit log of who published and 
 | Defender for Storage on-upload scanning: Microsoft Defender Antivirus engine, triggered by `BlobCreated`, scans all file types including ZIP and RAR, up to 50 GB, private endpoints supported, results as index tags (`No threats found` / `Malicious` / `Error` / `Not scanned`), Event Grid, alerts, Log Analytics; tags not tamper-resistant; billed per GB with a monthly cap; no latency SLA; metadata-after-upload can fail the scan | Verified | learn.microsoft.com/azure/defender-for-cloud/on-upload-malware-scanning, introduction-malware-scanning (updated 2026-09) |
 | Scope string format Entra expects in `scopes_supported` for a URL-style App ID URI | Assumed `<App ID URI>/<scope>`; Phase 0 confirms | n/a |
 | Azure DevOps: Pipelines Runs REST API with `templateParameters`, Environment approval checks with group assignment and timeout, Entra access tokens accepted by the Azure DevOps REST API, `KubernetesManifest@1` with a Kubernetes service connection, Microsoft-hosted agents cannot reach private clusters | Known, long-standing features; **not re-verified against live docs today** | learn.microsoft.com/azure/devops (confirm task versions in Phase 2) |
-| Everything in §6 runs | **Not run.** JSON, YAML and XML snippets parse. No live tenant, no real Cowork session, no end-to-end publish yet. | this file |
+| The local stack runs §6 end to end | **Run and green** (M1): `tests/negative.sh` 22/22 through intake → scanner → serving → shell on memory backends; unit suites intake 25, scanner 69, gateway 22, shell 16, CLI 33 | `STATUS.md` daily log |
+| Helm charts match the §6 specs | **Proven offline** (M7): platform chart 214-assertion conformance test, artifact chart conformance green, both lint clean | `charts/tests/` |
+| Anything against a live tenant, cluster, APIM, Azure DevOps or Cowork | **Not run here by design**: continues in the integration environment per `docs/HANDOFF.md`; the aggregated UNVERIFIED table lives there | `docs/HANDOFF.md` §6 |
 
-Calibrated: design ~90 % settled under your constraints, implementation 0 %, confidence the connector path works first time ~70 % (the Entra URI and scope strings are where first attempts fail), confidence the sandbox upload works on your plan ~60 % until Phase 0.
+Calibrated (end of day 4): design settled; code complete and green locally; cluster, tenant, APIM, Azure DevOps and Cowork behaviour unverified until the integration environment runs the M2–M5 gates. The two places first attempts most likely fail remain the Entra URI/scope strings and the Cowork egress allowlist.

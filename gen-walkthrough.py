@@ -35,7 +35,7 @@ src="""flowchart TB
     ENTRA["Entra ID"]
   end
   subgraph cicd ["Azure DevOps, your existing CI/CD"]
-    ADO["Pipeline artifact-python-deploy<br/>gitleaks policy, Sonar advisory, Environment approval,<br/>kubectl apply via the AKS service connection"]
+    ADO["Pipeline artifact-python-deploy<br/>gitleaks policy, Sonar advisory, Environment approval,<br/>helm upgrade via the AKS service connection"]
   end
   subgraph aks ["Private AKS cluster"]
     INTAKE["Intake API<br/>orchestrates every job"]
@@ -100,7 +100,8 @@ src="""sequenceDiagram
   AN->>GW: POST /v1/publish with Entra bearer token
   GW->>ID: validate token, audience, scope
   ID-->>GW: valid, user oid
-  GW->>IN: forward with X-Publisher-Oid
+  GW->>IN: forward the bearer unchanged
+  IN->>IN: verify the token itself (signature, issuer, audience, expiry); identity from claims
   IN-->>CW: jobId, uploadUrl, one-time uploadToken
   Note over AN,GW: replies travel back through APIM and the connector service
   CW->>SB: run upload.sh dist/
@@ -149,7 +150,7 @@ src="""sequenceDiagram
     ADO->>ADO: gitleaks under policy, Sonar scan attached as advisory report
     ADO->>IN: state = awaiting_approval, run link
     APR->>ADO: approve the Environment check, Entra group artifacts-approvers
-    ADO->>K8: apply ConfigMap with app.py, Deployment, Service, HTTPRoute, TTL label, via the AKS service connection
+    ADO->>K8: helm upgrade --install art-{id} (ConfigMap with app.py, Deployment, Service, HTTPRoute, expiry labels) via the AKS service connection
     K8->>POL: admission review
     POL-->>K8: allowed only if image digest, security context and capabilities match policy
     K8->>POD: schedule on the untrusted node pool

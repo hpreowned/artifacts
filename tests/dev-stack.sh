@@ -2,19 +2,10 @@
 # One-command local stack: intake-api + scanner worker (8080), static-gateway (8081), viewer-shell (8082).
 # Memory backends, DEV_AUTH=1, dev keys generated once into .local/dev.env. Usage: tests/dev-stack.sh start|stop|status|env
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"; L="$ROOT/.local"; mkdir -p "$L/serving" "$L/logs"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ROOT/scripts/dev-env.sh"
+L="$ROOT/.local"
 ENV="$L/dev.env"
-if [ ! -f "$ENV" ]; then
-  {
-    echo "VIEW_TOKEN_KEY=$(node -e 'console.log(require("crypto").randomBytes(32).toString("base64"))')"
-    echo "INTERNAL_SHARED_KEY=$(node -e 'console.log(require("crypto").randomBytes(24).toString("base64url"))')"
-    echo "PIPELINE_TOKEN=$(node -e 'console.log(require("crypto").randomBytes(24).toString("base64url"))')"
-  } > "$ENV"
-fi
-set -a; . "$ENV"; set +a
-export DEV_AUTH=1 SERVE_ROOT="$L/serving" PUBLIC_BASE_URL=http://localhost:8080 SHELL_ORIGIN=http://localhost:8082
-export ARTIFACT_DOMAIN=localhost:8081 ARTIFACT_SCHEME=http INTAKE_INTERNAL_URL=http://localhost:8080 DEV_INSECURE_COOKIES=1
-export RUNTIME_MANIFEST="$ROOT/tests/runtime-manifest.python-1.json"
 pidfile="$L/pids"
 PORTS="8080 8081 8082"
 listeners() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null || true; }

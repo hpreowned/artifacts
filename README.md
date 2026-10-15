@@ -9,4 +9,6 @@ Start here, in this order:
 4. `contracts/` — frozen interfaces: manifest schema, intake OpenAPI, states, findings and rule IDs.
 5. `tests/corpus/` — the adversarial and benign bundles every change is tested against.
 
+Run it locally: `scripts/install.sh` once, then `scripts/run-all.sh` (one terminal, Ctrl+C stops all) or `scripts/run-{intake,gateway,shell}.sh` in three terminals, or `tests/dev-stack.sh start|stop|status` detached.
+
 Directories (one owner each): `intake-api/`, `scanner/`, `static-gateway/`, `viewer-shell/`, `skill/`, `cli/`, `infra/`, `deploy/`, `pipelines/`, `tests/`.

@@ -117,3 +117,4 @@ Out of scope for the POC: Node runtime tier, scale-to-zero, per-artifact CSP scr
 - 2026-10-15 — Day 5. M8 moves to baseline build: contracts extended (demo tier, node-20, JS-001…JS-006), T80–T82 fanned out on Sonnet. Integration stays deferred.
 - 2026-10-15 — Day 5 close. T80–T82 merged; tier renamed demo→node per the user's reframe; trigger routes by tier; the blocked e2e un-skipped. Suites: scanner 84, intake 33 (0 skipped), preflight 74, cli 33; both artifact charts lint + conformance green. M8 code side done; its gate needs the cluster (runbook applies).
 - 2026-10-15 — docs/DEMO.md added: 15-minute local demo run book (no Azure), for the integration-environment demo while I1–I8 land.
+- 2026-10-15 — scripts/: install.sh, per-component runners, run-all.sh (foreground, prefixed logs), shared dev-env.sh; dev-stack.sh now sources the same env. Smoke-tested end to end.

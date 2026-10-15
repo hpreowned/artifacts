@@ -8,10 +8,9 @@ Node 20+ and Python 3.10+ on PATH. Commands assume the repo root as the working 
 
 ```sh
 node -v && python3 --version          # need v20+ and 3.10+
-for d in intake-api scanner static-gateway viewer-shell cli; do npm --prefix $d ci; done
-npm --prefix cli run build
-tests/dev-stack.sh start              # intake+scanner 8080, gateway 8081, shell 8082
-tests/dev-stack.sh status             # three ports answer
+scripts/install.sh                    # deps + CLI build; on a locked-down network set npm's registry to your mirror first
+scripts/run-all.sh                    # one terminal, prefixed logs, Ctrl+C stops all
+# (or scripts/run-intake.sh / run-gateway.sh / run-shell.sh in three panes, or tests/dev-stack.sh start for detached)
 ```
 
 Dry-run once so the first live publish is warm, then leave the stack running:

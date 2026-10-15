@@ -72,7 +72,7 @@ the status code.
    URL in the **same signed-in session**, confirm you get artifact B's own fresh token/cookie flow (a new
    `?t=` round-trip), not an error — then, with DevTools Network open, confirm the request to
    `b.corp-artifacts.net` never carries artifact A's cookie. There is no cross-artifact cookie leak to
-   demonstrate a 403 for; the 403 that matters here is reusing an **expired or forged** view token
+   prototypenstrate a 403 for; the 403 that matters here is reusing an **expired or forged** view token
    (`?t=` with a tampered payload) against the gateway directly — expect `403` with the "Open through the
    viewer" page from `static-gateway/README.md`'s rule 4.
 3. **Direct top-level load redirects to the shell.** Same as check 1: open

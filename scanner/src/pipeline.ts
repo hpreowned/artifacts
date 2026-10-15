@@ -1,22 +1,25 @@
-// Python tier hand-off: trigger the Azure DevOps pipeline (DESIGN §6.12) behind an interface. The fake answers
+// Server-tier hand-off (python and node, contracts/states.md): trigger the Azure DevOps pipeline behind an
+// interface; the ADO implementation picks the pipeline id by tier. The fake answers
 // with a local run URL and, when given a callback, plays the pipeline's first callback (awaiting_approval).
 import { DefaultAzureCredential } from "@azure/identity";
 
+export type ServerTier = "python" | "node";
+
 export interface PipelineTrigger {
-  triggerPythonDeploy(jobId: string): Promise<{ runUrl: string }>;
+  triggerDeploy(jobId: string, tier: ServerTier): Promise<{ runUrl: string }>;
 }
 
 export type TriggeredCallback = (jobId: string, runUrl: string) => Promise<void>;
 
 export class FakePipelineTrigger implements PipelineTrigger {
-  readonly triggered: { jobId: string; runUrl: string }[] = [];
+  readonly triggered: { jobId: string; runUrl: string; tier: ServerTier }[] = [];
   private readonly pending: Promise<void>[] = [];
 
   constructor(private readonly onTriggered?: TriggeredCallback) {}
 
-  async triggerPythonDeploy(jobId: string): Promise<{ runUrl: string }> {
+  async triggerDeploy(jobId: string, tier: ServerTier): Promise<{ runUrl: string }> {
     const runUrl = `http://localhost/fake-run/${jobId}`;
-    this.triggered.push({ jobId, runUrl });
+    this.triggered.push({ jobId, runUrl, tier });
     if (this.onTriggered) {
       // Deferred so the worker's own write of the job lands before the fake pipeline's callback.
       const callback = this.onTriggered;
@@ -59,14 +62,16 @@ export class AzureDevOpsPipelineTrigger implements PipelineTrigger {
     private readonly org: string,
     private readonly project: string,
     private readonly pipelineId: string,
+    private readonly nodePipelineId: string,
     private readonly credential: TokenSource = new DefaultAzureCredential(),
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
-  async triggerPythonDeploy(jobId: string): Promise<{ runUrl: string }> {
+  async triggerDeploy(jobId: string, tier: ServerTier): Promise<{ runUrl: string }> {
     const token = await this.credential.getToken(ADO_SCOPE);
     if (!token) throw new Error("could not obtain an Azure DevOps access token");
-    const url = `https://dev.azure.com/${encodeURIComponent(this.org)}/${encodeURIComponent(this.project)}/_apis/pipelines/${encodeURIComponent(this.pipelineId)}/runs?api-version=7.1`;
+    const pipelineId = tier === "node" ? this.nodePipelineId : this.pipelineId;
+    const url = `https://dev.azure.com/${encodeURIComponent(this.org)}/${encodeURIComponent(this.project)}/_apis/pipelines/${encodeURIComponent(pipelineId)}/runs?api-version=7.1`;
     const res = await this.fetchImpl(url, {
       method: "POST",
       headers: { authorization: `Bearer ${token.token}`, "content-type": "application/json" },

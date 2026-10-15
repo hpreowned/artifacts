@@ -31,8 +31,8 @@ def validate(m: object) -> list[str]:
     if not isinstance(name, str) or not NAME_RE.match(name):
         errors.append("name must match ^[a-z0-9][a-z0-9-]{2,62}$")
     tier = m.get("tier")
-    if tier not in ("static", "python", "demo"):
-        errors.append("tier must be 'static', 'python' or 'demo'")
+    if tier not in ("static", "python", "node"):
+        errors.append("tier must be 'static', 'python' or 'node'")
     runtime = m.get("runtime")
     if runtime not in ("python-1", "node-20", None):
         errors.append("runtime must be 'python-1', 'node-20' or null")
@@ -47,7 +47,7 @@ def validate(m: object) -> list[str]:
             if not isinstance(u, str) or not CDN_RE.match(u):
                 errors.append(f"externalScripts entry is not on an allowlisted CDN: {u!r}")
     ttl = m.get("ttlDays")
-    ttl_max = 30 if tier == "demo" else 90
+    ttl_max = 90
     if isinstance(ttl, bool) or not isinstance(ttl, int) or not 1 <= ttl <= ttl_max:
         errors.append(f"ttlDays must be an integer from 1 to {ttl_max}")
     gb = m.get("generatedBy")
@@ -67,11 +67,11 @@ def validate(m: object) -> list[str]:
             errors.append("tier static requires runtime null")
         if entry != "index.html":
             errors.append("tier static requires entrypoint 'index.html'")
-    if tier == "demo":
+    if tier == "node":
         if runtime != "node-20":
-            errors.append("tier demo requires runtime 'node-20'")
+            errors.append("tier prototype requires runtime 'node-20'")
         if entry != "package.json":
-            errors.append("tier demo requires entrypoint 'package.json'")
+            errors.append("tier prototype requires entrypoint 'package.json'")
     return errors
 
 
@@ -89,7 +89,7 @@ def main(argv: list[str]) -> int:
     for e in errors:
         print(f"error: {e}")
     if isinstance(m, dict):
-        if m.get("tier") in ("static", "python", "demo"):
+        if m.get("tier") in ("static", "python", "node"):
             print(f"tier={m['tier']}")
         if m.get("entrypoint") in ("index.html", "app.py", "package.json"):
             print(f"entrypoint={m['entrypoint']}")

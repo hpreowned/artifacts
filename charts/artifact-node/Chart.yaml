@@ -1,0 +1,6 @@
+apiVersion: v2
+name: artifact-node
+description: One rendered release per node-tier artifact (DESIGN D14, §6.13, D13). Deployment + Service + HTTPRoute, release name node-<artifactId>, namespace artifacts-dynamic. The app is baked into the image (node-runtime/Dockerfile), not mounted from a ConfigMap like charts/artifact-python.
+type: application
+version: 0.1.0
+appVersion: "1"

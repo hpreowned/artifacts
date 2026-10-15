@@ -1,6 +1,6 @@
 ---
 name: publish-to-aks
-description: Publish an HTML/JS, small Python, or self-contained Node demo artifact to the internal AKS artifact host instead of claude.ai. Use when the user says "publish internally", "host this on our cluster", "deploy to AKS", "demo this app internally", or asks for an internal shareable link. Requires the "Artifacts" connector (tools beginPublish and getPublishStatus). Static artifacts go live in seconds behind corporate sign-in; Python and demo artifacts need a human approval first. Demo artifacts expire in 30 days or fewer and keep no state between pod restarts.
+description: Publish an HTML/JS, small Python, or self-contained Node prototype artifact to the internal AKS artifact host instead of claude.ai. Use when the user says "publish internally", "host this on our cluster", "deploy to AKS", "prototype this app internally", or asks for an internal shareable link. Requires the "Artifacts" connector (tools beginPublish and getPublishStatus). Static artifacts go live in seconds behind corporate sign-in; Python and prototype artifacts need a human approval first. Prototype artifacts expire in 30 days or fewer and keep no state between pod restarts.
 ---
 
 # Publish to AKS
@@ -33,8 +33,8 @@ Everything the artifact needs lives in one directory, `dist/`:
   `${CLAUDE_SKILL_DIR}/reference/python-1-libraries.md` are importable; no `requirements.txt`.
   No subprocess, sockets, `ctypes`, `pickle`, `eval`/`exec`, file writes outside `/tmp`, or
   outbound HTTP. A Python artifact runs only after a human approves it; tell the user this up front.
-- Demo (D14/§6.13): a self-contained Node 20 full-stack prototype, tier `demo`, runtime `node-20`,
-  entrypoint `package.json`, for demos and pattern approval only — not a permanent home. Everything the
+- Prototype (D14/§6.13): a self-contained Node 20 full-stack prototype, tier `prototype`, runtime `node-20`,
+  entrypoint `package.json`, for prototypes and pattern approval only — not a permanent home. Everything the
   app needs ships inside `dist/`:
   - `dist/package.json` with a `start` script that serves everything — static client and API — on
     `$PORT`, and `dist/package-lock.json` resolved against the JFrog npm mirror (the pipeline installs
@@ -43,15 +43,15 @@ Everything the artifact needs lives in one directory, `dist/`:
     or any secret-shaped file).
   - All data as files inside the bundle, for example `dist/data/db.json`; the app reads and writes only
     its own filesystem, and every writable path is ephemeral — it is gone the moment the pod restarts or
-    the demo expires. Tell the user this up front: nothing the app writes at runtime survives.
+    the node prototype expires. Tell the user this up front: nothing the app writes at runtime survives.
   - No outbound network calls of any kind: the platform denies all egress, including DNS, so `fetch`/
     `http.request` to anything other than the app's own relative paths will simply hang and time out.
     No `child_process`, `vm`, `worker_threads`, or raw `net`/`dgram`/`tls` sockets in the app's own
     server files (the pipeline installs dependencies; it does not vet them the way the python-1 runtime's
     import allowlist does — ephemerality, egress denial and the human approval are the real wall here).
-  - `ttlDays` 1 to 30 (the schema caps demo lower than static/python's 90), default 14. A demo artifact
+  - `ttlDays` 1 to 30 (the schema caps prototype lower than static/python's 90), default 14. A node prototype artifact
     waits for a human approval before it runs, exactly like python; tell the user this up front too.
-  - The viewer shows a persistent "Demo environment. Data is not retained. Expires &lt;date&gt;." banner;
+  - The viewer shows a persistent "Prototype environment. Data is not retained. Expires &lt;date&gt;." banner;
     do not promise the user anything these constraints contradict (no login system with a real database,
     no file uploads that need to outlive a request, no calls to the company's other internal services).
 
@@ -59,9 +59,9 @@ Everything the artifact needs lives in one directory, `dist/`:
 
 1. Write `dist/manifest.json` following `${CLAUDE_SKILL_DIR}/reference/manifest-schema.json`:
    `schemaVersion` 2, `name` (lowercase, digits, dashes), `tier`, `runtime` (`null` for static,
-   `"python-1"` for python, `"node-20"` for demo), `entrypoint` (`index.html`, `app.py`, or
-   `package.json` for demo), `externalScripts`, `ttlDays` (1 to 90 for static/python, 1 to 30 for
-   demo, default 14), `generatedBy: { "tool": "cowork" }`.
+   `"python-1"` for python, `"node-20"` for prototype), `entrypoint` (`index.html`, `app.py`, or
+   `package.json` for prototype), `externalScripts`, `ttlDays` (1 to 90 for static/python, 1 to 30 for
+   prototype, default 14), `generatedBy: { "tool": "cowork" }`.
 2. Run `${CLAUDE_SKILL_DIR}/scripts/preflight.sh dist/`. It prints one line per finding as
    `RULE file:line message` and exits 1 when something would be rejected. Fix every finding and
    rerun until it exits 0. Lines marked `(warn)` or `(info)` do not block but are worth fixing.
@@ -84,7 +84,7 @@ Everything the artifact needs lives in one directory, `dist/`:
   `findings` (each has `rule`, `file`, `line`, `message`), rerun preflight, then start again from
   step 3 with a new `beginPublish`. At most 3 attempts in total. If the third attempt is also
   rejected, stop, show the user the remaining findings and ask how they want to proceed.
-- `awaiting_approval` — Python and demo only. The artifact passed scanning and is waiting for a human
+- `awaiting_approval` — Python and prototype only. The artifact passed scanning and is waiting for a human
   in the approver group. Report `approval.runUrl` (the approval run link) and `approval.group`
   (the Entra group that approves), tell the user they will get the URL once approved, and stop.
   Do not poll further and do not try to approve anything yourself.

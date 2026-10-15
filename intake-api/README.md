@@ -125,12 +125,12 @@ The Azure implementations authenticate with `DefaultAzureCredential` (workload i
 
 The worker's variables (`GITLEAKS_BIN`, `PYTHON_BIN`, `RUNTIME_MANIFEST`, `DEFENDER_*`, `GC_INTERVAL_SECONDS`,
 `PIPELINE_TRIGGER`, `ADO_*`, `INTAKE_INTERNAL_URL`) are read by the same `src/config.ts` and documented in
-`../scanner/README.md`; `npm run dev` honours all of them. One addition for the demo tier (D14/§6.13):
-`ADO_DEMO_PIPELINE_ID` sits next to `ADO_PIPELINE_ID` — the python-tier run id is still `ADO_PIPELINE_ID`,
-the demo-tier run id (`artifact-demo-deploy`) is `ADO_DEMO_PIPELINE_ID`. With `PIPELINE_TRIGGER=ado`, both are
+`../scanner/README.md`; `npm run dev` honours all of them. One addition for the node tier (D14/§6.13):
+`ADO_NODE_PIPELINE_ID` sits next to `ADO_PIPELINE_ID` — the python-tier run id is still `ADO_PIPELINE_ID`,
+the node-tier run id (`artifact-node-deploy`) is `ADO_NODE_PIPELINE_ID`. With `PIPELINE_TRIGGER=ado`, both are
 required at startup, same as `ADO_ORG`/`ADO_PROJECT`/`ADO_PIPELINE_ID` always were; `PIPELINE_TRIGGER=fake`
 (the default off `BACKEND=memory`) needs neither. Which pipeline id a given job actually posts to is the
-trigger implementation's call (`cfg.worker.ado.pipelineId` vs `.demoPipelineId`, picked by `job.tier`), not
+trigger implementation's call (`cfg.worker.ado.pipelineId` vs `.nodePipelineId`, picked by `job.tier`), not
 this config module's — see `../scanner/README.md` for how the real Azure DevOps trigger uses it.
 
 ## Layout
@@ -172,7 +172,7 @@ to disk at run time: `src/stores/select.ts`'s `LocalServingStore` (the only thin
 the filesystem) is constructed but never called by `src/main.ts`'s routes — publishing files is the scanner
 worker's job, in its own container. So the image runs with `readOnlyRootFilesystem: true` and no writable
 volumes. `BACKEND=azure` also pulls in the worker's config validation (shared `src/config.ts`), which defaults
-`PIPELINE_TRIGGER` to `ado` and then requires `ADO_ORG`/`ADO_PROJECT`/`ADO_PIPELINE_ID`/`ADO_DEMO_PIPELINE_ID`;
+`PIPELINE_TRIGGER` to `ado` and then requires `ADO_ORG`/`ADO_PROJECT`/`ADO_PIPELINE_ID`/`ADO_NODE_PIPELINE_ID`;
 pass `PIPELINE_TRIGGER=fake` if those aren't set, even though this image's own entrypoint never triggers a
 pipeline.
 

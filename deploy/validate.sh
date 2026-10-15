@@ -64,6 +64,21 @@ if command -v helm >/dev/null 2>&1; then
     echo "helm lint FAIL  charts/artifact-python"; fail=1
   fi
 fi
+if command -v helm >/dev/null 2>&1; then
+  if helm lint "$root/charts/artifact-node" >/dev/null; then
+    echo "helm lint ok  charts/artifact-node"
+  else
+    echo "helm lint FAIL  charts/artifact-node"; fail=1
+  fi
+fi
+if [ -x "$root/charts/tests/node-conformance.sh" ]; then
+  if "$root/charts/tests/node-conformance.sh"; then
+    echo "conformance ok  charts/artifact-node"
+  else
+    echo "conformance FAIL  charts/artifact-node"; fail=1
+  fi
+fi
+
 if [ -x "$root/charts/tests/artifact-conformance.sh" ]; then
   if "$root/charts/tests/artifact-conformance.sh"; then
     echo "conformance ok  charts/artifact-python"

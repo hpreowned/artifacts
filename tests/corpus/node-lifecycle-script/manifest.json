@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 2,
+  "name": "node-lifecycle-script",
+  "tier": "node",
+  "runtime": "node-20",
+  "entrypoint": "package.json",
+  "externalScripts": [],
+  "ttlDays": 14,
+  "generatedBy": {
+    "tool": "artifactctl",
+    "model": "test-corpus",
+    "session": "corpus"
+  }
+}

@@ -26,11 +26,11 @@
       "enum": [
         "static",
         "python",
-        "demo"
+        "node"
       ]
     },
     "runtime": {
-      "description": "Curated runtime line: python-1 for tier python, node-20 for tier demo. null for static.",
+      "description": "Curated runtime line: python-1 for tier python, node-20 for tier prototype. null for static.",
       "enum": [
         "python-1",
         "node-20",
@@ -132,7 +132,7 @@
       "if": {
         "properties": {
           "tier": {
-            "const": "demo"
+            "const": "node"
           }
         }
       },
@@ -146,11 +146,6 @@
           },
           "entrypoint": {
             "const": "package.json"
-          },
-          "ttlDays": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 30
           }
         }
       }

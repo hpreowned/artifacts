@@ -17,7 +17,7 @@ export interface Finding {
 export interface Status {
   jobId: string;
   state: State;
-  tier?: "static" | "python" | "demo";
+  tier?: "static" | "python" | "node";
   updatedAt: string;
   url?: string;
   expiresAt?: string;

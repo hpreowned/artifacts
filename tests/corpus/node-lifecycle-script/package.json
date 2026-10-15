@@ -1,0 +1,12 @@
+{
+  "name": "node-lifecycle-script",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js",
+    "postinstall": "node setup.js"
+  },
+  "dependencies": {
+    "express": "4.19.2"
+  }
+}

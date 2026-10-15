@@ -25,12 +25,12 @@ export const PYTHON_MANIFEST: Manifest = {
   externalScripts: [], ttlDays: 14, generatedBy: { tool: "artifactctl", model: "test", session: "test" },
 };
 /**
- * `as unknown as Manifest`: intake-api/src/job.ts's `Tier`/`Manifest` types do not carry "demo"/"node-20"/
+ * `as unknown as Manifest`: intake-api/src/job.ts's `Tier`/`Manifest` types do not carry "node"/"node-20"/
  * "package.json" yet (not scanner's file to change; see the final report). The schema at
  * contracts/manifest.schema.json already validates this shape; only the local TS literal type lags.
  */
-export const DEMO_MANIFEST = {
-  schemaVersion: 2, name: "test-demo", tier: "demo", runtime: "node-20", entrypoint: "package.json",
+export const NODE_TIER_MANIFEST = {
+  schemaVersion: 2, name: "test-prototype", tier: "node", runtime: "node-20", entrypoint: "package.json",
   externalScripts: [], ttlDays: 14, generatedBy: { tool: "artifactctl", model: "test", session: "test" },
 } as unknown as Manifest;
 

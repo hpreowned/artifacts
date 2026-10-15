@@ -1,5 +1,5 @@
 // The scan worker: one job per queue message, stages in DESIGN §5 order, verdict from policy.ts, then either
-// copy to the serving store (static) or trigger the deploy pipeline (python, and demo per §6.13). Every exit
+// copy to the serving store (static) or trigger the deploy pipeline (python, and prototype per §6.13). Every exit
 // writes a summary.
 import { rm } from "node:fs/promises";
 import type { Finding, JobRecord, Manifest, State } from "../../intake-api/src/job.js";
@@ -97,9 +97,9 @@ async function scan(zip: Buffer, job: JobRecord, defender: Promise<DefenderResul
   if (!intake.manifest || hasDeny(ctx.findings)) return;
   ctx.manifest = intake.manifest;
   ctx.findings.push(...(await secretsScan(dir, files, opts)));
-  // Static, python and demo (DESIGN §6.13) each get their own stage; demo is whatever tier is neither of the
-  // first two (the `Tier` type does not carry "demo" yet, see the final report, so this stays an exclusion
-  // rather than a literal === "demo" check).
+  // Static, python and prototype (DESIGN §6.13) each get their own stage; prototype is whatever tier is neither of the
+  // first two (the `Tier` type does not carry "node" yet, see the final report, so this stays an exclusion
+  // rather than a literal === "node" check).
   if (ctx.manifest.tier === "static") {
     ctx.findings.push(...(await htmlChecks(dir, files, ctx.manifest)));
   } else if (ctx.manifest.tier === "python") {
@@ -155,13 +155,13 @@ async function settle(job: JobRecord, ctx: ScanContext, deps: WorkerDeps): Promi
     await save("live", summarize(job, "live"));
     return dropBundle();
   }
-  // Python and demo: the job stays `scanning`; the pipeline moves it to awaiting_approval through /events
-  // (contracts/states.md says demo follows the python path verbatim). Same trigger call either way — which
-  // Azure DevOps pipeline it reaches (artifact-python-deploy vs artifact-demo-deploy) is a config concern for
+  // Python and prototype: the job stays `scanning`; the pipeline moves it to awaiting_approval through /events
+  // (contracts/states.md says prototype follows the python path verbatim). Same trigger call either way — which
+  // Azure DevOps pipeline it reaches (artifact-python-deploy vs artifact-node-deploy) is a config concern for
   // whoever wires the real PipelineTrigger, not the worker (see the final report).
   await save("scanning", summarize(job, "triggering"));
   try {
-    const { runUrl } = await deps.pipeline.triggerPythonDeploy(job.jobId);
+    const { runUrl } = await deps.pipeline.triggerDeploy(job.jobId, job.tier === "node" ? "node" : "python");
     const fresh = (await jobs.get(job.jobId)) ?? job;
     fresh.runUrl = runUrl;
     fresh.summary = summarize(fresh, "triggered", { runUrl, group: deps.opts.approverGroup });

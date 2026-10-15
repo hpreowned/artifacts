@@ -2,7 +2,7 @@
 
 export type State =
   | "awaiting_upload" | "scanning" | "rejected" | "awaiting_approval" | "deploying" | "live" | "failed" | "expired";
-export type Tier = "static" | "python" | "demo";
+export type Tier = "static" | "python" | "node";
 export type Severity = "deny" | "warn" | "info";
 
 export interface Finding {

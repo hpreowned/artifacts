@@ -22,14 +22,14 @@ prints. `--json` prints the `Status` object from the contract instead, and keeps
 A `400` from `beginPublish` (manifest refused before a job exists) is reported as state `rejected` with the
 server's findings, or `IN-006` when the server sent none, and an empty `jobId`.
 
-**Publishing a demo bundle (D14/§6.13).** `artifactctl` is tier-agnostic: nothing in `publish`, `status` or
-`preflight` branches on `tier`. A demo manifest (`tier: "demo"`, `runtime: "node-20"`, `entrypoint:
+**Publishing a node bundle (D14/§6.13).** `artifactctl` is tier-agnostic: nothing in `publish`, `status` or
+`preflight` branches on `tier`. A node manifest (`tier: "node"`, `runtime: "node-20"`, `entrypoint:
 "package.json"`) zips and uploads exactly like a static or python one —
-`artifactctl publish --wait demo-app/` works as long as `demo-app/manifest.json`, `package.json`,
+`artifactctl publish --wait prototype-app/` works as long as `prototype-app/manifest.json`, `package.json`,
 `package-lock.json` and the rest of the self-contained Node app follow `skill/publish-to-aks/SKILL.md`'s
-demo-tier output contract. The one behavioral difference, same as python: a passing scan lands on
+node-tier output contract. The one behavioral difference, same as python: a passing scan lands on
 `awaiting_approval`, not `live` — `--wait` returns 0 and prints `run`/`group` from `Status.approval`, not a
-`url`. There is no `demo`-only flag or subcommand to add.
+`url`. There is no `prototype`-only flag or subcommand to add.
 
 ## Exit codes
 

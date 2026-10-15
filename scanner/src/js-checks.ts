@@ -1,4 +1,4 @@
-// Demo tier stage (contracts/findings.md JS-001..JS-006, DESIGN §6.13). Runs over the bundle's own
+// Node tier stage (contracts/findings.md JS-001..JS-006, DESIGN §6.13). Runs over the bundle's own
 // .js/.jsx/.ts/.tsx/.mjs/.cjs files. There is no `node_modules` in a valid bundle; if one exists that is JS-003
 // and its contents are never scanned for the other rules.
 import { readFile } from "node:fs/promises";
@@ -28,7 +28,7 @@ function isInNodeModules(file: string): boolean {
   return file === "node_modules" || file.startsWith("node_modules/");
 }
 
-/** The whole demo stage. `dir`/`files` are the already-extracted bundle (worker.ts, after intake checks). */
+/** The whole prototype stage. `dir`/`files` are the already-extracted bundle (worker.ts, after intake checks). */
 export async function jsChecks(dir: string, files: string[], opts: JsOptions): Promise<Finding[]> {
   const findings: Finding[] = [
     ...(await lockfileCheck(dir, files, opts)),
@@ -57,7 +57,7 @@ function envFileCheck(files: string[]): Finding[] {
   const findings: Finding[] = [];
   for (const file of files) {
     const base = file.split("/").pop() ?? file;
-    if (DOTFILE_RE.test(base)) findings.push(f("JS-004", file, undefined, `${base} must never ship inside a demo bundle`));
+    if (DOTFILE_RE.test(base)) findings.push(f("JS-004", file, undefined, `${base} must never ship inside a node bundle`));
   }
   return findings;
 }

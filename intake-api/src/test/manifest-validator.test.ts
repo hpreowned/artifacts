@@ -1,46 +1,48 @@
-// Unit coverage for manifest-validator.ts against the frozen contracts/manifest.schema.json: the demo-tier
-// `allOf` branch (schemaVersion 2, tier "demo", runtime "node-20", entrypoint "package.json", ttlDays 1..30).
+// Unit coverage for manifest-validator.ts against the frozen contracts/manifest.schema.json: the node-tier
+// `allOf` branch (schemaVersion 2, tier "node", runtime "node-20", entrypoint "package.json", ttlDays 1..30).
 // static/python already exercise the validator indirectly through api.test.ts's beginPublish 400 case; this
 // file is the validator's own direct test, covering all three tiers' allOf branches.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { manifestValidator } from "../manifest-validator.js";
 
-const DEMO_OK = {
+const NODE_TIER_OK = {
   schemaVersion: 2,
-  name: "demo-ok",
-  tier: "demo",
+  name: "node-ok",
+  tier: "node",
   runtime: "node-20",
   entrypoint: "package.json",
   ttlDays: 14,
   generatedBy: { tool: "artifactctl" },
 };
 
-test("manifest-validator: a well-formed demo manifest validates clean", () => {
-  const errors = manifestValidator().validate(DEMO_OK);
+test("manifest-validator: a well-formed node manifest validates clean", () => {
+  const errors = manifestValidator().validate(NODE_TIER_OK);
   assert.deepEqual(errors, []);
 });
 
-test("manifest-validator: demo ttlDays over 30 is rejected (schema caps demo at 30, static/python at 90)", () => {
-  const bad = { ...DEMO_OK, ttlDays: 60 };
+test("manifest-validator: ttlDays over 90 is rejected for every tier; 60 is valid for node (uniform cap)", () => {
+  const sixty = manifestValidator().validate({ ...NODE_TIER_OK, ttlDays: 60 });
+  assert.equal(sixty.length, 0);
+  const bad = { ...NODE_TIER_OK, ttlDays: 95 };
   const errors = manifestValidator().validate(bad);
-  assert.ok(errors.some((e) => e.includes("ttlDays") && e.includes("<= 30")), JSON.stringify(errors));
+  assert.ok(errors.some((e) => e.includes("ttlDays")), JSON.stringify(errors));
 });
 
-test("manifest-validator: demo requires runtime node-20 and entrypoint package.json", () => {
-  const wrongRuntime = manifestValidator().validate({ ...DEMO_OK, runtime: "python-1" });
+test("manifest-validator: prototype requires runtime node-20 and entrypoint package.json", () => {
+  const wrongRuntime = manifestValidator().validate({ ...NODE_TIER_OK, runtime: "python-1" });
   assert.ok(wrongRuntime.some((e) => e.includes("runtime")), JSON.stringify(wrongRuntime));
 
-  const wrongEntry = manifestValidator().validate({ ...DEMO_OK, entrypoint: "index.html" });
+  const wrongEntry = manifestValidator().validate({ ...NODE_TIER_OK, entrypoint: "index.html" });
   assert.ok(wrongEntry.some((e) => e.includes("entrypoint")), JSON.stringify(wrongEntry));
 
-  const missingRuntime: Record<string, unknown> = { ...DEMO_OK };
+  const missingRuntime: Record<string, unknown> = { ...NODE_TIER_OK };
   delete missingRuntime.runtime;
   const errors = manifestValidator().validate(missingRuntime);
   assert.ok(errors.some((e) => e.includes("missing required property \"runtime\"")), JSON.stringify(errors));
 });
 
-test("manifest-validator: static and python allOf branches still hold (regression against the demo addition)", () => {
+test("manifest-validator: static and python allOf branches still hold (regression against the node prototype addition)", () => {
   assert.deepEqual(
     manifestValidator().validate({
       schemaVersion: 2, name: "static-ok", tier: "static", runtime: null, entrypoint: "index.html",
@@ -55,7 +57,7 @@ test("manifest-validator: static and python allOf branches still hold (regressio
     }),
     [],
   );
-  // static/python are not capped at 30: 60 is only invalid for demo.
+  // static/python are not capped at 30: 60 is only invalid for prototype.
   assert.deepEqual(
     manifestValidator().validate({
       schemaVersion: 2, name: "python-ok", tier: "python", runtime: "python-1", entrypoint: "app.py",

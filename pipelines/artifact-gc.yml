@@ -1,7 +1,7 @@
-# Nightly garbage collection, DESIGN §6.12 last paragraph, D12, D13, §6.13 (demo tier).
+# Nightly garbage collection, DESIGN §6.12 last paragraph, D12, D13, §6.13 (node tier).
 #   1. Find every Helm release in artifacts-dynamic whose expiry has passed and `helm uninstall` it — both
-#      `art-*` (Python tier, charts/artifact-python) and `demo-*` (demo tier, charts/artifact-demo) releases.
-#      contracts/states.md: the demo tier "uses the python tier's transitions verbatim", so one GC pass
+#      `art-*` (Python tier, charts/artifact-python) and `prototype-*` (node tier, charts/artifact-node) releases.
+#      contracts/states.md: the node tier "uses the python tier's transitions verbatim", so one GC pass
 #      covers both release families with the same expiry mechanism.
 #   2. Delete serving/<id>/ for every expired static artifact listed by intake-api's job records
 #      (jobs/<jobId>.json with artifactId, tier, state, expiresAt) and post `expired` for each.
@@ -9,12 +9,12 @@
 # variable is the bare intake base URL, every callback posts to <url>/v1/publish/<jobId>/events (the
 # contracts/intake-openapi.yaml path). Variable group artifacts-platform.
 #
-# T82 (M8, §6.13) — gc_dynamic's release listing extended from `art-*` only to `art-*` or `demo-*`
+# T82 (M8, §6.13) — gc_dynamic's release listing extended from `art-*` only to `art-*` or `prototype-*`
 # -----------------------------------------------------------------------------------------------------------
 # Was: `helm list -n artifacts-dynamic -o json | jq ... select(.name | startswith("art-"))` only ever found
-# Python-tier releases, so a demo release would live forever regardless of its TTL.
-# Now: the same `startswith("art-")` test is widened to `startswith("art-") or startswith("demo-")`.
-# `charts/artifact-demo/templates/deployment.yaml` sets the identical `artifacts.corp.com/expires-at`
+# Python-tier releases, so a node prototype release would live forever regardless of its TTL.
+# Now: the same `startswith("art-")` test is widened to `startswith("art-") or startswith("node-")`.
+# `charts/artifact-node/templates/deployment.yaml` sets the identical `artifacts.corp.com/expires-at`
 # annotation shape `charts/artifact-python` does (same reasoning: `helm get metadata` cannot surface it, so
 # `helm get manifest` reads the Deployment's own annotation), so the expiry-read and `helm uninstall` logic
 # below needed no other change — it is release-name-agnostic from this point on.
@@ -50,7 +50,7 @@ variables:
 
 jobs:
   - job: gc_dynamic
-    displayName: Expire Python/demo artifact Helm releases in artifacts-dynamic
+    displayName: Expire Python/prototype artifact Helm releases in artifacts-dynamic
     steps:
       - checkout: none
       - task: Kubernetes@1
@@ -66,7 +66,7 @@ jobs:
           echo "now=$now"
           : > expired-releases.txt
           helm list -n artifacts-dynamic -o json \
-          | jq -r '.[] | select(.name | startswith("art-") or startswith("demo-")) | .name' \
+          | jq -r '.[] | select(.name | startswith("art-") or startswith("node-")) | .name' \
           | while IFS= read -r release; do
               [ -n "$release" ] || continue
               expires="$(helm get manifest "$release" -n artifacts-dynamic \

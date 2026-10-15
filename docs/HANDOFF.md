@@ -484,3 +484,11 @@ snapshot, it will drift):
 
 If any of these are `done` by the time you read this, trust `STATUS.md` over this list — this document is a
 snapshot from the hand-off day, not a live feed.
+
+## Addendum (after snapshot-1): node runtime
+
+Added on 2026-10-15, travels from snapshot-2 on. The launchpad's three runtimes are static, python, and node — one prototype contract (DESIGN D14/§6.13). Integration deltas on top of I1–I8:
+- Register `pipelines/artifact-node-deploy.yml` as a second pipeline on the same VNet pool and Environment `artifacts-dynamic`; grant the scanner worker's identity Queue-builds on it; set `ADO_NODE_PIPELINE_ID` on the worker (next to `ADO_PIPELINE_ID`).
+- The build stage needs the JFrog **npm** mirror reachable from the pool (`npm ci --ignore-scripts --registry https://jfrog.corp.com/artifactory/api/npm/npm-remote/`) and docker build/push rights for `jfrog.corp.com/artifacts/node-<artifactId>` images.
+- Charts: `charts/artifact-node` (validated offline by `charts/tests/node-conformance.sh`, wired into `deploy/validate.sh`). GC already covers `node-*` releases.
+- M8's gate (STATUS.md) runs on the cluster exactly like M5's, with `tests/corpus/node-ok` as the acceptance bundle.

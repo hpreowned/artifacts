@@ -51,12 +51,12 @@ test("fake pipeline trigger returns a local run url and plays its callback after
   const t = new FakePipelineTrigger(async (jobId, runUrl) => {
     seen.push(`${jobId}:${runUrl}`);
   });
-  const { runUrl } = await t.triggerPythonDeploy("job_a");
+  const { runUrl } = await t.triggerDeploy("job_a", "python");
   assert.equal(runUrl, "http://localhost/fake-run/job_a");
   assert.deepEqual(seen, [], "deferred");
   await t.drain();
   assert.deepEqual(seen, ["job_a:http://localhost/fake-run/job_a"]);
-  assert.deepEqual(t.triggered, [{ jobId: "job_a", runUrl }]);
+  assert.deepEqual(t.triggered, [{ jobId: "job_a", runUrl, tier: "python" }]);
 });
 
 test("Azure DevOps trigger posts the run request with a bearer from the credential", async () => {
@@ -67,17 +67,17 @@ test("Azure DevOps trigger posts the run request with a bearer from the credenti
   }) as typeof fetch;
   const scopes: string[] = [];
   const credential = { getToken: async (scope: string) => (scopes.push(scope), { token: "t" }) };
-  const t = new AzureDevOpsPipelineTrigger("o", "p", "12", credential, fetchImpl);
-  const { runUrl } = await t.triggerPythonDeploy("job_z");
+  const t = new AzureDevOpsPipelineTrigger("o", "p", "12", "34", credential, fetchImpl);
+  const { runUrl } = await t.triggerDeploy("job_z", "node");
   assert.equal(runUrl, "https://dev.azure.com/o/p/_build/results?buildId=7");
   assert.deepEqual(scopes, [ADO_SCOPE]);
-  assert.equal(calls[0]!.url, "https://dev.azure.com/o/p/_apis/pipelines/12/runs?api-version=7.1");
+  assert.equal(calls[0]!.url, "https://dev.azure.com/o/p/_apis/pipelines/34/runs?api-version=7.1", "node tier routes to the node pipeline id");
   assert.equal(calls[0]!.init.method, "POST");
   assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { templateParameters: { jobId: "job_z" } });
   assert.equal((calls[0]!.init.headers as Record<string, string>).authorization, "Bearer t");
 
-  const failing = new AzureDevOpsPipelineTrigger("o", "p", "12", credential, (async () => new Response("nope", { status: 403 })) as typeof fetch);
-  await assert.rejects(() => failing.triggerPythonDeploy("job_z"), /403/);
-  const noToken = new AzureDevOpsPipelineTrigger("o", "p", "12", { getToken: async () => null }, fetchImpl);
-  await assert.rejects(() => noToken.triggerPythonDeploy("job_z"), /access token/);
+  const failing = new AzureDevOpsPipelineTrigger("o", "p", "12", "34", credential, (async () => new Response("nope", { status: 403 })) as typeof fetch);
+  await assert.rejects(() => failing.triggerDeploy("job_z", "python"), /403/);
+  const noToken = new AzureDevOpsPipelineTrigger("o", "p", "12", "34", { getToken: async () => null }, fetchImpl);
+  await assert.rejects(() => noToken.triggerDeploy("job_z", "python"), /access token/);
 });

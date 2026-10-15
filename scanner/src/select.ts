@@ -14,8 +14,8 @@ export function createDefenderReader(cfg: Config): DefenderReader {
 /** The fake trigger plays the pipeline's first callback against intake when a pipeline token is configured. */
 export function createPipelineTrigger(cfg: Config): PipelineTrigger {
   if (cfg.worker.pipelineTrigger === "ado") {
-    const { org, project, pipelineId } = cfg.worker.ado;
-    return new AzureDevOpsPipelineTrigger(org!, project!, pipelineId!);
+    const { org, project, pipelineId, nodePipelineId } = cfg.worker.ado;
+    return new AzureDevOpsPipelineTrigger(org!, project!, pipelineId!, nodePipelineId!);
   }
   const callback = cfg.pipelineToken ? postAwaitingApproval(cfg.worker.intakeInternalUrl, cfg.pipelineToken) : undefined;
   if (!callback) console.warn("[worker] PIPELINE_TOKEN is not set: the fake pipeline will not post awaiting_approval");

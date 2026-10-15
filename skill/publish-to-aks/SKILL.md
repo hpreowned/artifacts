@@ -1,6 +1,6 @@
 ---
 name: publish-to-aks
-description: Publish an HTML/JS, small Python, or self-contained Node prototype artifact to the internal AKS artifact host instead of claude.ai. Use when the user says "publish internally", "host this on our cluster", "deploy to AKS", "prototype this app internally", or asks for an internal shareable link. Requires the "Artifacts" connector (tools beginPublish and getPublishStatus). Static artifacts go live in seconds behind corporate sign-in; Python and prototype artifacts need a human approval first. Prototype artifacts expire in 30 days or fewer and keep no state between pod restarts.
+description: Publish an HTML/JS, small Python, or self-contained Node prototype artifact to the internal AKS artifact host instead of claude.ai. Use when the user says "publish internally", "host this on our cluster", "deploy to AKS", "prototype this app internally", or asks for an internal shareable link. Requires the "Artifacts" connector (tools beginPublish and getPublishStatus). Static artifacts go live in seconds behind corporate sign-in; Python and prototype artifacts need a human approval first. Every artifact carries a TTL of 1 to 90 days; prototypes keep no state between pod restarts.
 ---
 
 # Publish to AKS

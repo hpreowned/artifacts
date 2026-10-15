@@ -5,20 +5,45 @@
   "description": "Written by the publish-to-aks skill (or artifactctl) into dist/manifest.json. Validated by intake-api at stage 1. The tier is a claim; the scanner verifies it by content.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "name", "tier", "entrypoint", "ttlDays", "generatedBy"],
+  "required": [
+    "schemaVersion",
+    "name",
+    "tier",
+    "entrypoint",
+    "ttlDays",
+    "generatedBy"
+  ],
   "properties": {
-    "schemaVersion": { "const": 2 },
+    "schemaVersion": {
+      "const": 2
+    },
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{2,62}$",
       "description": "Human label. The artifact id is assigned by intake-api; the name is not an identifier."
     },
-    "tier": { "enum": ["static", "python"] },
-    "runtime": {
-      "description": "Curated runtime line for python artifacts. null for static.",
-      "enum": ["python-1", null]
+    "tier": {
+      "enum": [
+        "static",
+        "python",
+        "demo"
+      ]
     },
-    "entrypoint": { "enum": ["index.html", "app.py"] },
+    "runtime": {
+      "description": "Curated runtime line: python-1 for tier python, node-20 for tier demo. null for static.",
+      "enum": [
+        "python-1",
+        "node-20",
+        null
+      ]
+    },
+    "entrypoint": {
+      "enum": [
+        "index.html",
+        "app.py",
+        "package.json"
+      ]
+    },
     "externalScripts": {
       "type": "array",
       "maxItems": 20,
@@ -29,30 +54,105 @@
       },
       "description": "Every <script src> in the bundle must appear here and must match the allowlisted CDN prefixes."
     },
-    "ttlDays": { "type": "integer", "minimum": 1, "maximum": 90, "default": 14 },
+    "ttlDays": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 90,
+      "default": 14
+    },
     "generatedBy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["tool"],
+      "required": [
+        "tool"
+      ],
       "properties": {
-        "tool": { "enum": ["cowork", "claude-code", "artifactctl", "other"] },
-        "model": { "type": "string", "maxLength": 100 },
-        "session": { "type": "string", "maxLength": 200 }
+        "tool": {
+          "enum": [
+            "cowork",
+            "claude-code",
+            "artifactctl",
+            "other"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "session": {
+          "type": "string",
+          "maxLength": 200
+        }
       }
     }
   },
   "allOf": [
     {
-      "if": { "properties": { "tier": { "const": "python" } } },
+      "if": {
+        "properties": {
+          "tier": {
+            "const": "python"
+          }
+        }
+      },
       "then": {
-        "required": ["runtime"],
-        "properties": { "runtime": { "const": "python-1" }, "entrypoint": { "const": "app.py" } }
+        "required": [
+          "runtime"
+        ],
+        "properties": {
+          "runtime": {
+            "const": "python-1"
+          },
+          "entrypoint": {
+            "const": "app.py"
+          }
+        }
       }
     },
     {
-      "if": { "properties": { "tier": { "const": "static" } } },
+      "if": {
+        "properties": {
+          "tier": {
+            "const": "static"
+          }
+        }
+      },
       "then": {
-        "properties": { "runtime": { "const": null }, "entrypoint": { "const": "index.html" } }
+        "properties": {
+          "runtime": {
+            "const": null
+          },
+          "entrypoint": {
+            "const": "index.html"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "tier": {
+            "const": "demo"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "runtime"
+        ],
+        "properties": {
+          "runtime": {
+            "const": "node-20"
+          },
+          "entrypoint": {
+            "const": "package.json"
+          },
+          "ttlDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          }
+        }
       }
     }
   ]

@@ -22,3 +22,5 @@ One job per `beginPublish`. One artifact id per job. States and who moves them:
 Terminal: rejected, failed, expired. `live` is terminal for the publisher; it ends in `expired`.
 
 Defender for Storage result handling at stage 3: `Malicious` → rejected with MAL-001. `No threats found` → continue. `Error`, `Not scanned`, or no result within 60 s → `failed` with MAL-002 and a message that asks for a resubmit; never auto-allow.
+
+The demo tier (`tier: demo`, DESIGN D14/§6.13) uses the python tier's transitions verbatim; its pipeline is `artifact-demo-deploy` and its TTL maximum is 30 days.

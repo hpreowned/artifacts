@@ -189,9 +189,9 @@ components:
       properties:
         schemaVersion: { type: integer, enum: [2] }
         name: { type: string }
-        tier: { type: string, enum: [static, python] }
-        runtime: { type: string, nullable: true, enum: [python-1, null] }
-        entrypoint: { type: string, enum: [index.html, app.py] }
+        tier: { type: string, enum: [static, python, demo] }
+        runtime: { type: string, nullable: true, enum: [python-1, node-20, null] }
+        entrypoint: { type: string, enum: [index.html, app.py, package.json] }
         externalScripts: { type: array, items: { type: string } }
         ttlDays: { type: integer, minimum: 1, maximum: 90 }
         generatedBy:
@@ -228,7 +228,7 @@ components:
       properties:
         jobId: { $ref: '#/components/schemas/JobId' }
         state: { $ref: '#/components/schemas/State' }
-        tier: { type: string, enum: [static, python] }
+        tier: { type: string, enum: [static, python, demo] }
         updatedAt: { type: string, format: date-time }
         url: { type: string, format: uri, description: 'Viewer shell URL, present when live' }
         expiresAt: { type: string, format: date-time }

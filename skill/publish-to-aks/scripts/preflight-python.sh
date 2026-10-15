@@ -34,7 +34,7 @@ check_imports() {
       [ -z "$m" ] && continue                       # relative import: from . import x
       [ -f "$m.py" ] && continue                    # module shipped inside the bundle
       printf '%s\n' "$allowed" | grep -qx "$m" && continue
-      finding PY-001 deny "$f" "$line" "import '$m' is outside the standard library and the python-1 runtime (see reference/python-1-libraries.md)"
+      finding PY-001 deny "$f" "$line" "import '$m' is outside the standard library and the python-1 runtime (see references/python-1-libraries.md)"
     done
   done
 }
@@ -57,7 +57,7 @@ check_python_file() {
 check_python_bundle() {
   local f
   for f in requirements.txt pyproject.toml setup.py; do
-    [ -f "$f" ] && finding PY-004 deny "$f" 0 "dependency files are not allowed; the python-1 runtime fixes the libraries (see reference/python-1-libraries.md)"
+    [ -f "$f" ] && finding PY-004 deny "$f" 0 "dependency files are not allowed; the python-1 runtime fixes the libraries (see references/python-1-libraries.md)"
   done
   find . -type f \( -name '*.whl' -o -name '*.tar.gz' \) | sed 's#^\./##' | while IFS= read -r f; do
     finding PY-004 deny "$f" 0 "package archives are not allowed in the bundle"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate dist/manifest.json against reference/manifest-schema.json without third-party libraries.
+"""Validate dist/manifest.json against references/manifest-schema.json without third-party libraries.
 
 Prints `error: <message>` lines for every problem (exit 1), then `tier=`, `entrypoint=` and one
 `externalScript=<url>` line per entry so preflight.sh can reuse the parsed values.

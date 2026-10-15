@@ -1,6 +1,6 @@
 ---
 name: publish-to-aks
-description: Publish an HTML/JS, small Python, or self-contained Node prototype artifact to the internal AKS artifact host instead of claude.ai. Use when the user says "publish internally", "host this on our cluster", "deploy to AKS", "prototype this app internally", or asks for an internal shareable link. Requires the "Artifacts" connector (tools beginPublish and getPublishStatus). Static artifacts go live in seconds behind corporate sign-in; Python and prototype artifacts need a human approval first. Every artifact carries a TTL of 1 to 90 days; prototypes keep no state between pod restarts.
+description: Publish an HTML/JS, small Python, or self-contained Node prototype artifact to the internal AKS artifact host instead of claude.ai. Use when the user says "publish internally", "host this on our cluster", "deploy to AKS", "prototype this app internally", or asks for an internal shareable link — and whenever a finished dashboard, page, report, or small app should be seen by colleagues, even if the user never says "publish" or "AKS". Requires the "Artifacts" connector (tools beginPublish and getPublishStatus). Static artifacts go live in seconds behind corporate sign-in; Python and prototype artifacts need a human approval first. Every artifact carries a TTL of 1 to 90 days; prototypes keep no state between pod restarts.
 ---
 
 # Publish to AKS
@@ -33,7 +33,7 @@ Everything the artifact needs lives in one directory, `dist/`:
   `${CLAUDE_SKILL_DIR}/reference/python-1-libraries.md` are importable; no `requirements.txt`.
   No subprocess, sockets, `ctypes`, `pickle`, `eval`/`exec`, file writes outside `/tmp`, or
   outbound HTTP. A Python artifact runs only after a human approves it; tell the user this up front.
-- Prototype (D14/§6.13): a self-contained Node 20 full-stack prototype, tier `prototype`, runtime `node-20`,
+- Prototype (D14/§6.13): a self-contained Node 20 full-stack prototype, tier `node`, runtime `node-20`,
   entrypoint `package.json`, for prototypes and pattern approval only — not a permanent home. Everything the
   app needs ships inside `dist/`:
   - `dist/package.json` with a `start` script that serves everything — static client and API — on

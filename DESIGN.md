@@ -261,9 +261,9 @@ description: Publish an HTML/JS or small Python artifact to the internal AKS art
 - Scripts only from cdnjs.cloudflare.com or cdn.jsdelivr.net/npm, exact versions. No fetch, XHR, or WebSocket: they are blocked at serve time.
 - No password inputs, no forms posting anywhere, no iframes, no meta refresh, no popups.
 - No secrets, tokens, or keys anywhere, including comments.
-- Python: a single `app.py`, runtime `python-1`. Only these libraries are available: see `${CLAUDE_SKILL_DIR}/reference/python-1-libraries.md`. No `requirements.txt`. No subprocess, sockets, file writes outside /tmp, or outbound HTTP. Python artifacts need a human approval before they go live; tell the user.
+- Python: a single `app.py`, runtime `python-1`. Only these libraries are available: see `${CLAUDE_SKILL_DIR}/references/python-1-libraries.md`. No `requirements.txt`. No subprocess, sockets, file writes outside /tmp, or outbound HTTP. Python artifacts need a human approval before they go live; tell the user.
 ## Steps
-1. Write `dist/manifest.json` per `${CLAUDE_SKILL_DIR}/reference/manifest-schema.json`.
+1. Write `dist/manifest.json` per `${CLAUDE_SKILL_DIR}/references/manifest-schema.json`.
 2. Run `${CLAUDE_SKILL_DIR}/scripts/preflight.sh dist/`. Fix anything it flags.
 3. Call the `beginPublish` tool with the manifest. Keep jobId, uploadUrl, uploadToken.
 4. Run `${CLAUDE_SKILL_DIR}/scripts/upload.sh dist/ "<uploadUrl>" "<uploadToken>"`. If it prints NETWORK_BLOCKED, stop and tell the user the Cowork egress allowlist needs the APIM host. Do not retry with inline data.
@@ -315,7 +315,7 @@ ENV PATH="/venv/bin:$PATH" HOME=/tmp PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 EXPOSE 8080
 ```
-Versions above are placeholders to pin to what your CI resolves. `runtime-manifest.json` lists importable top-level module names; your CI also renders it to `reference/python-1-libraries.md` for the skill. Entrypoint is chosen by the intake API per runtime: `streamlit run /app/app.py --server.port=8080 --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false` or `uvicorn app:app --host 0.0.0.0 --port 8080 --app-dir /app`.
+Versions above are placeholders to pin to what your CI resolves. `runtime-manifest.json` lists importable top-level module names; your CI also renders it to `references/python-1-libraries.md` for the skill. Entrypoint is chosen by the intake API per runtime: `streamlit run /app/app.py --server.port=8080 --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false` or `uvicorn app:app --host 0.0.0.0 --port 8080 --app-dir /app`.
 
 ### 6.6 Dynamic tier: Deployment (rendered by the `charts/artifact-python` Helm chart, one release per artifact, denied by Azure Policy if it drifts)
 ```yaml

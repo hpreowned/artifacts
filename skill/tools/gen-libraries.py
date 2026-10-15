@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render reference/python-1-libraries.md from the runtime manifest. Standard library only.
+"""Render references/python-1-libraries.md from the runtime manifest. Standard library only.
 
 Usage: gen-libraries.py <runtime-manifest.json> [<output.md>]
 Without an output path the markdown goes to stdout. The platform's CI runs this against the

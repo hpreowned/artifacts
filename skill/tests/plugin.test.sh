@@ -15,8 +15,8 @@ OUT=$(bash "$BUILD" plugin "$WORK/p.zip"); RC=$?
 check "$RC" 0 "plugin build exits 0"
 check "$OUT" "$WORK/p.zip" "plugin build prints the output path"
 L=$(listing "$WORK/p.zip")
-for want in .claude-plugin/plugin.json .mcp.json skills/publish-to-aks/SKILL.md skills/publish-to-aks/reference/manifest-schema.json \
-            skills/publish-to-aks/reference/python-1-libraries.md skills/publish-to-aks/scripts/preflight.sh \
+for want in .claude-plugin/plugin.json .mcp.json skills/publish-to-aks/SKILL.md skills/publish-to-aks/references/manifest-schema.json \
+            skills/publish-to-aks/references/python-1-libraries.md skills/publish-to-aks/scripts/preflight.sh \
             skills/publish-to-aks/scripts/preflight-manifest.py skills/publish-to-aks/scripts/preflight-python.sh skills/publish-to-aks/scripts/upload.sh; do
   has "$L" "$want" && echo "ok   plugin zip has $want" || { echo "FAIL plugin zip missing $want"; FAIL=1; }
 done

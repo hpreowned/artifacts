@@ -27,7 +27,7 @@ Pinned versions in the Dockerfile are known-good releases at the time of writing
 the JFrog mirror; a pin that does not exist fails the build. Bump pins deliberately, rebuild, and let
 `pipelines/platform-deploy.yml` publish the new `runtime-manifest.python-1.json` and the image digest; then a
 person sets `PYTHON_RUNTIME_IMAGE` in the `artifacts-platform` variable group to the new digest and agent-client
-regenerates `reference/python-1-libraries.md` from the manifest.
+regenerates `references/python-1-libraries.md` from the manifest.
 
 The manifest's `modules` are the curated distributions' top-level import names only. Transitive dependencies
 (click, jinja2, pydantic_core, ...) are installed but **not** allowed as imports: the scanner rejects them, which

@@ -11,7 +11,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DIST=${1%/}
 [ -d "$DIST" ] || { echo "IN-006 manifest.json:0 directory not found: $DIST"; exit 1; }
 cd "$DIST" || exit 1
-LIBS_MD="$HERE/../reference/python-1-libraries.md"
+LIBS_MD="$HERE/../references/python-1-libraries.md"
 CDN_RE='^https://(cdnjs\.cloudflare\.com/ajax/libs/|cdn\.jsdelivr\.net/npm/)[^[:space:]"'"'"'<>]+$'
 ALLOWED_EXT='html css js json svg png jpg jpeg webp woff2 txt md csv py'
 NODE_TIER_EXTRA_EXT='jsx ts tsx mjs cjs ico map'

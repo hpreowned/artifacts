@@ -34,10 +34,12 @@ export async function intakeChecks(dir: string, files: string[], submitted: Mani
   }
   if (findings.length > 0) return { findings, manifest: undefined };
 
+  // Tier-by-content (IN-007). demo has no extra content rule here: its entrypoint is "package.json", already
+  // checked generically below (IN-008), and DESIGN §6.13 leaves a stray app.py or index.html alone.
   const exts = files.map((f) => ({ file: f, ext: extensionOf(f) }));
   if (manifest.tier === "static") {
     for (const { file, ext } of exts) if (ext === "py") findings.push(deny("IN-007", "python file in a static bundle", file));
-  } else {
+  } else if (manifest.tier === "python") {
     if (!files.includes("app.py")) findings.push(deny("IN-007", "python bundle without app.py at the root", "app.py"));
     for (const { file, ext } of exts) if (ext === "html") findings.push(deny("IN-007", "html file in a python bundle", file));
   }

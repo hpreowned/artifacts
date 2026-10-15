@@ -22,7 +22,7 @@ after(async () => {
 });
 
 const bundles = readdirSync(CORPUS).filter((name) => existsSync(join(CORPUS, name, "expected.json"))).sort();
-assert.ok(bundles.length >= 21, `corpus has ${bundles.length} bundles`);
+assert.ok(bundles.length >= 28, `corpus has ${bundles.length} bundles`);
 
 for (const name of bundles) {
   test(`corpus/${name}`, async () => {

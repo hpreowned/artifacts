@@ -30,5 +30,8 @@ export function workerOptions(cfg: Config): WorkerOptions {
     runtimeManifestPath: cfg.worker.runtimeManifestPath,
     shellOrigin: cfg.shellOrigin,
     approverGroup: cfg.approverGroup,
+    // Not part of intake-api's Config (that file is not ours to extend): read directly, same default as the
+    // contract (contracts/findings.md JS-002).
+    npmRegistryHost: process.env.NPM_REGISTRY_HOST ?? "jfrog.corp.com",
   };
 }

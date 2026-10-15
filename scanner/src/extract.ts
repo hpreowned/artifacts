@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve, sep } from "node:path";
 import type { Finding } from "../../intake-api/src/job.js";
-import { ALLOWED_EXTENSIONS, MAX_FILES, MAX_UNCOMPRESSED_BYTES, MAX_ZIP_BYTES, extensionOf } from "./limits.js";
+import { MAX_FILES, MAX_UNCOMPRESSED_BYTES, MAX_ZIP_BYTES, allowedExtensions, extensionOf, isAllowedFile, type ScanTier } from "./limits.js";
 import { readZip, type ZipEntry } from "./zip-read.js";
 
 export interface Extracted {
@@ -24,7 +24,8 @@ export function safeRelativePath(name: string): string | undefined {
   return normalized.replace(/\/+$/, "");
 }
 
-export async function extractBundle(zip: Buffer): Promise<Extracted> {
+/** `tier` picks the IN-005 allowlist (contracts/findings.md); defaults to the static/python list. */
+export async function extractBundle(zip: Buffer, tier: ScanTier = "static"): Promise<Extracted> {
   const dir = await mkdtemp(join(tmpdir(), "artifact-scan-"));
   const findings: Finding[] = [];
   const files: string[] = [];
@@ -44,7 +45,7 @@ export async function extractBundle(zip: Buffer): Promise<Extracted> {
   }
   const seen = new Set<string>();
   for (const entry of entries) {
-    const finding = await extractEntry(entry, dir, seen);
+    const finding = await extractEntry(entry, dir, seen, tier);
     if (finding) findings.push(finding);
     else files.push(safeRelativePath(entry.name)!);
   }
@@ -52,7 +53,7 @@ export async function extractBundle(zip: Buffer): Promise<Extracted> {
   return { dir, files, findings };
 }
 
-async function extractEntry(entry: ZipEntry, dir: string, seen: Set<string>): Promise<Finding | undefined> {
+async function extractEntry(entry: ZipEntry, dir: string, seen: Set<string>, tier: ScanTier): Promise<Finding | undefined> {
   const rel = safeRelativePath(entry.name);
   if (rel === undefined) return deny("IN-003", "path escapes the bundle root", entry.name);
   const target = resolve(dir, rel);
@@ -62,8 +63,9 @@ async function extractEntry(entry: ZipEntry, dir: string, seen: Set<string>): Pr
   if (entry.isSymlink) return deny("IN-004", "symlink in the bundle", entry.name);
   if (entry.isSpecial) return deny("IN-004", "special file (device, fifo or socket) in the bundle", entry.name);
   const ext = extensionOf(rel);
-  if (!ALLOWED_EXTENSIONS.has(ext)) {
-    return deny("IN-005", `file type "${ext || "(none)"}" is not allowed; allowed: ${[...ALLOWED_EXTENSIONS].join(" ")}`, entry.name);
+  const base = rel.split("/").pop() ?? rel;
+  if (!isAllowedFile(ext, base, tier)) {
+    return deny("IN-005", `file type "${ext || "(none)"}" is not allowed; allowed: ${[...allowedExtensions(tier)].join(" ")}`, entry.name);
   }
   const data = entry.read(MAX_UNCOMPRESSED_BYTES);
   await mkdir(dirname(target), { recursive: true });

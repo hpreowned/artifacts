@@ -1,5 +1,6 @@
 // The scan worker: one job per queue message, stages in DESIGN §5 order, verdict from policy.ts, then either
-// copy to the serving store (static) or trigger the deploy pipeline (python). Every exit writes a summary.
+// copy to the serving store (static) or trigger the deploy pipeline (python, and demo per §6.13). Every exit
+// writes a summary.
 import { rm } from "node:fs/promises";
 import type { Finding, JobRecord, Manifest, State } from "../../intake-api/src/job.js";
 import type { Stores } from "../../intake-api/src/stores/types.js";
@@ -7,6 +8,7 @@ import { htmlChecks, pythonFileChecks } from "./checks.js";
 import type { DefenderReader, DefenderResult } from "./defender.js";
 import { extractBundle, type Extracted } from "./extract.js";
 import { intakeChecks } from "./intake-checks.js";
+import { jsChecks } from "./js-checks.js";
 import type { PipelineTrigger } from "./pipeline.js";
 import { severityOf, verdict } from "./policy.js";
 import { pythonChecks } from "./python-stage.js";
@@ -21,6 +23,8 @@ export interface WorkerOptions {
   runtimeManifestPath: string;
   shellOrigin: string;
   approverGroup: string;
+  /** JS-002: the JFrog npm mirror host every lockfile `resolved` URL must match. */
+  npmRegistryHost: string;
 }
 
 export interface WorkerDeps {
@@ -78,7 +82,7 @@ export async function processJob(jobId: string, deps: WorkerDeps): Promise<void>
 
 async function scan(zip: Buffer, job: JobRecord, defender: Promise<DefenderResult>, opts: WorkerOptions, ctx: ScanContext): Promise<void> {
   try {
-    ctx.extracted = await extractBundle(zip);
+    ctx.extracted = await extractBundle(zip, job.manifest.tier);
   } catch (err) {
     if (!(err instanceof ZipError)) throw err;
     ctx.findings.push({ rule: "IN-009", severity: "deny", message: `the upload is not a readable zip archive: ${err.message}` });
@@ -93,11 +97,16 @@ async function scan(zip: Buffer, job: JobRecord, defender: Promise<DefenderResul
   if (!intake.manifest || hasDeny(ctx.findings)) return;
   ctx.manifest = intake.manifest;
   ctx.findings.push(...(await secretsScan(dir, files, opts)));
+  // Static, python and demo (DESIGN §6.13) each get their own stage; demo is whatever tier is neither of the
+  // first two (the `Tier` type does not carry "demo" yet, see the final report, so this stays an exclusion
+  // rather than a literal === "demo" check).
   if (ctx.manifest.tier === "static") {
     ctx.findings.push(...(await htmlChecks(dir, files, ctx.manifest)));
-  } else {
+  } else if (ctx.manifest.tier === "python") {
     ctx.findings.push(...pythonFileChecks(files));
     ctx.findings.push(...(await pythonChecks(dir, opts)));
+  } else {
+    ctx.findings.push(...(await jsChecks(dir, files, { npmRegistryHost: opts.npmRegistryHost })));
   }
   const mal = await defender;
   if (mal === "Malicious") {
@@ -146,7 +155,10 @@ async function settle(job: JobRecord, ctx: ScanContext, deps: WorkerDeps): Promi
     await save("live", summarize(job, "live"));
     return dropBundle();
   }
-  // Python: the job stays `scanning`; the pipeline moves it to awaiting_approval through /events (contracts/states.md).
+  // Python and demo: the job stays `scanning`; the pipeline moves it to awaiting_approval through /events
+  // (contracts/states.md says demo follows the python path verbatim). Same trigger call either way — which
+  // Azure DevOps pipeline it reaches (artifact-python-deploy vs artifact-demo-deploy) is a config concern for
+  // whoever wires the real PipelineTrigger, not the worker (see the final report).
   await save("scanning", summarize(job, "triggering"));
   try {
     const { runUrl } = await deps.pipeline.triggerPythonDeploy(job.jobId);

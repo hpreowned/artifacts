@@ -19,5 +19,6 @@ export PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-http://localhost:8080}
 export SHELL_ORIGIN=${SHELL_ORIGIN:-http://localhost:8082}
 export ARTIFACT_DOMAIN=${ARTIFACT_DOMAIN:-localhost:8081}
 export ARTIFACT_SCHEME=http
+export HOST=127.0.0.1               # dev servers bind loopback only; unset in cluster manifests (pods must bind all interfaces)
 export INTAKE_INTERNAL_URL=${INTAKE_INTERNAL_URL:-http://localhost:8080}
 export RUNTIME_MANIFEST="$ROOT/tests/runtime-manifest.python-1.json"

@@ -18,7 +18,7 @@ const stopSweeper = startExpirySweeper(stores.jobs, cfg.uploadExpirySweepSeconds
 // loadConfig() already refused to start without ENTRA_TENANT_ID/ENTRA_AUDIENCE unless devAuth is set.
 const entraVerifier = cfg.devAuth ? undefined : createEntraTokenVerifier({ tenantId: cfg.entraTenantId!, audience: cfg.entraAudience!, requiredScope: cfg.entraRequiredScope });
 const server = createApp({ cfg, stores, now: () => new Date(), entraVerifier });
-server.listen(cfg.port, () => console.log(`[intake] listening on :${cfg.port} (backend=${cfg.backend}, devAuth=${cfg.devAuth})`));
+server.listen(cfg.port, process.env.HOST ?? "0.0.0.0", () => console.log(`[intake] listening on :${cfg.port} (backend=${cfg.backend}, devAuth=${cfg.devAuth})`));
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {

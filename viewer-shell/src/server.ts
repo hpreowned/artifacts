@@ -40,7 +40,7 @@ const server = createServer((req, res) => {
   });
 });
 
-server.listen(config.port, () => {
+server.listen(config.port, process.env.HOST ?? "0.0.0.0", () => {
   process.stderr.write(JSON.stringify({ ts: new Date().toISOString(), msg: 'viewer-shell listening', port: config.port, devAuth: config.devAuth }) + '\n');
 });
 

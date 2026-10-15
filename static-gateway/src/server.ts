@@ -17,7 +17,7 @@ const server = createServer((req, res) => {
   });
 });
 
-server.listen(config.port, () => {
+server.listen(config.port, process.env.HOST ?? "0.0.0.0", () => {
   process.stdout.write(
     JSON.stringify({ ts: new Date().toISOString(), msg: 'static-gateway listening', port: config.port, artifactDomain: config.artifactDomain }) + '\n',
   );

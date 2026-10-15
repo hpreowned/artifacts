@@ -14,6 +14,7 @@ cd "$DIST" || exit 1
 LIBS_MD="$HERE/../reference/python-1-libraries.md"
 CDN_RE='^https://(cdnjs\.cloudflare\.com/ajax/libs/|cdn\.jsdelivr\.net/npm/)[^[:space:]"'"'"'<>]+$'
 ALLOWED_EXT='html css js json svg png jpg jpeg webp woff2 txt md csv py'
+DEMO_EXTRA_EXT='jsx ts tsx mjs cjs ico map'
 SEV=$(mktemp "${TMPDIR:-/tmp}/preflight.XXXXXX")
 trap 'rm -f "$SEV"' EXIT
 PY=""
@@ -66,20 +67,28 @@ check_manifest() {
     TIER=$(grep -oE '"tier"[[:space:]]*:[[:space:]]*"[a-z]+"' manifest.json | sed 's/.*"\([a-z]*\)"$/\1/')
     ENTRY=$(grep -oE '"entrypoint"[[:space:]]*:[[:space:]]*"[a-z.]+"' manifest.json | sed 's/.*"\([a-z.]*\)"$/\1/')
     EXT_SCRIPTS=$(grep -oE 'https://[^"[:space:]]+' manifest.json || true)
-    [ -n "$TIER" ] || finding IN-006 deny manifest.json 0 "tier missing (static or python)"
-    [ -n "$ENTRY" ] || finding IN-006 deny manifest.json 0 "entrypoint missing (index.html or app.py)"
+    [ -n "$TIER" ] || finding IN-006 deny manifest.json 0 "tier missing (static, python or demo)"
+    [ -n "$ENTRY" ] || finding IN-006 deny manifest.json 0 "entrypoint missing (index.html, app.py or package.json)"
   fi
 }
 
-# ---------- files (IN-004, IN-005, IN-007, IN-008) ----------
+# ---------- files (IN-004, IN-005, IN-007, IN-008; JS-003/JS-004 for demo) ----------
 check_files() {
-  local f ext has_py=0 has_html=0
+  local f ext has_py=0 has_html=0 allowed_ext="$ALLOWED_EXT"
+  [ "$TIER" = demo ] && allowed_ext="$ALLOWED_EXT $DEMO_EXTRA_EXT"
   while IFS= read -r f; do
     if [ -L "$f" ]; then finding IN-004 deny "$f" 0 "symlink or special file in the bundle"; continue; fi
+    if [ "$TIER" = demo ]; then
+      case "$f" in
+        node_modules|node_modules/*) finding JS-003 deny "$f" 0 "node_modules/ must not ship in the bundle; the pipeline installs dependencies with npm ci"; continue ;;
+        .env|.env.*) finding JS-004 deny "$f" 0 ".env files must not ship in the bundle" ; continue ;;
+        .npmrc) finding JS-004 deny "$f" 0 ".npmrc must not ship in the bundle" ; continue ;;
+      esac
+    fi
     ext=${f##*.}; [ "$ext" = "$f" ] && ext=""
-    case " $ALLOWED_EXT " in
+    case " $allowed_ext " in
       *" $ext "*) ;;
-      *) finding IN-005 deny "$f" 0 "file type .$ext is outside the allowlist ($ALLOWED_EXT)" ;;
+      *) finding IN-005 deny "$f" 0 "file type .$ext is outside the allowlist ($allowed_ext)" ;;
     esac
     [ "$ext" = py ] && has_py=1
     [ "$ext" = html ] && has_html=1
@@ -151,8 +160,16 @@ check_secrets() {
 check_manifest
 check_files
 . "$HERE/preflight-python.sh"
+. "$HERE/preflight-demo.sh"
 while IFS= read -r f; do
   [ -f "$f" ] || continue
+  if [ "$TIER" = demo ]; then
+    case "$f" in
+      *.js|*.jsx|*.ts|*.tsx|*.mjs|*.cjs) check_demo_js_file "$f"; check_secrets "$f" ;;
+      *.css|*.json|*.txt|*.md|*.csv|*.svg|*.html) check_secrets "$f" ;;
+    esac
+    continue
+  fi
   case "$f" in
     *.html|*.js|*.svg) check_html_file "$f"; check_secrets "$f" ;;
     *.css|*.json|*.txt|*.md|*.csv) check_secrets "$f" ;;
@@ -162,5 +179,6 @@ done <<EOT
 $(list_files)
 EOT
 [ "$TIER" = python ] && check_python_bundle
+[ "$TIER" = demo ] && check_demo_bundle
 grep -q '^deny$' "$SEV" && exit 1
 exit 0

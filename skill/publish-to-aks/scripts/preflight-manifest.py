@@ -31,14 +31,14 @@ def validate(m: object) -> list[str]:
     if not isinstance(name, str) or not NAME_RE.match(name):
         errors.append("name must match ^[a-z0-9][a-z0-9-]{2,62}$")
     tier = m.get("tier")
-    if tier not in ("static", "python"):
-        errors.append("tier must be 'static' or 'python'")
+    if tier not in ("static", "python", "demo"):
+        errors.append("tier must be 'static', 'python' or 'demo'")
     runtime = m.get("runtime")
-    if runtime not in ("python-1", None):
-        errors.append("runtime must be 'python-1' or null")
+    if runtime not in ("python-1", "node-20", None):
+        errors.append("runtime must be 'python-1', 'node-20' or null")
     entry = m.get("entrypoint")
-    if entry not in ("index.html", "app.py"):
-        errors.append("entrypoint must be 'index.html' or 'app.py'")
+    if entry not in ("index.html", "app.py", "package.json"):
+        errors.append("entrypoint must be 'index.html', 'app.py' or 'package.json'")
     ext = m.get("externalScripts", [])
     if not isinstance(ext, list) or len(ext) > 20:
         errors.append("externalScripts must be an array of at most 20 URLs")
@@ -47,8 +47,9 @@ def validate(m: object) -> list[str]:
             if not isinstance(u, str) or not CDN_RE.match(u):
                 errors.append(f"externalScripts entry is not on an allowlisted CDN: {u!r}")
     ttl = m.get("ttlDays")
-    if isinstance(ttl, bool) or not isinstance(ttl, int) or not 1 <= ttl <= 90:
-        errors.append("ttlDays must be an integer from 1 to 90")
+    ttl_max = 30 if tier == "demo" else 90
+    if isinstance(ttl, bool) or not isinstance(ttl, int) or not 1 <= ttl <= ttl_max:
+        errors.append(f"ttlDays must be an integer from 1 to {ttl_max}")
     gb = m.get("generatedBy")
     if not isinstance(gb, dict) or gb.get("tool") not in TOOLS:
         errors.append("generatedBy.tool must be one of cowork, claude-code, artifactctl, other")
@@ -66,6 +67,11 @@ def validate(m: object) -> list[str]:
             errors.append("tier static requires runtime null")
         if entry != "index.html":
             errors.append("tier static requires entrypoint 'index.html'")
+    if tier == "demo":
+        if runtime != "node-20":
+            errors.append("tier demo requires runtime 'node-20'")
+        if entry != "package.json":
+            errors.append("tier demo requires entrypoint 'package.json'")
     return errors
 
 
@@ -83,9 +89,9 @@ def main(argv: list[str]) -> int:
     for e in errors:
         print(f"error: {e}")
     if isinstance(m, dict):
-        if m.get("tier") in ("static", "python"):
+        if m.get("tier") in ("static", "python", "demo"):
             print(f"tier={m['tier']}")
-        if m.get("entrypoint") in ("index.html", "app.py"):
+        if m.get("entrypoint") in ("index.html", "app.py", "package.json"):
             print(f"entrypoint={m['entrypoint']}")
         for u in m.get("externalScripts", []) if isinstance(m.get("externalScripts"), list) else []:
             if isinstance(u, str):

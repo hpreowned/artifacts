@@ -24,6 +24,15 @@ export const PYTHON_MANIFEST: Manifest = {
   schemaVersion: 2, name: "test-python", tier: "python", runtime: "python-1", entrypoint: "app.py",
   externalScripts: [], ttlDays: 14, generatedBy: { tool: "artifactctl", model: "test", session: "test" },
 };
+/**
+ * `as unknown as Manifest`: intake-api/src/job.ts's `Tier`/`Manifest` types do not carry "demo"/"node-20"/
+ * "package.json" yet (not scanner's file to change; see the final report). The schema at
+ * contracts/manifest.schema.json already validates this shape; only the local TS literal type lags.
+ */
+export const DEMO_MANIFEST = {
+  schemaVersion: 2, name: "test-demo", tier: "demo", runtime: "node-20", entrypoint: "package.json",
+  externalScripts: [], ttlDays: 14, generatedBy: { tool: "artifactctl", model: "test", session: "test" },
+} as unknown as Manifest;
 
 /** Zips a directory as a bundle (relative posix paths, deflate). `expected.json` is test metadata, not bundle content. */
 export async function zipDir(dir: string, skip: string[] = ["expected.json"]): Promise<Buffer> {
@@ -87,7 +96,8 @@ export async function harness(overrides: Partial<WorkerOptions> = {}): Promise<H
   });
   const opts: WorkerOptions = {
     gitleaksBin: await fakeGitleaks(workDir), pythonBin: "python3", importsScript: IMPORTS_SCRIPT,
-    runtimeManifestPath: RUNTIME_MANIFEST, shellOrigin: "http://localhost:8082", approverGroup: "artifacts-approvers", ...overrides,
+    runtimeManifestPath: RUNTIME_MANIFEST, shellOrigin: "http://localhost:8082", approverGroup: "artifacts-approvers",
+    npmRegistryHost: "jfrog.corp.com", ...overrides,
   };
   return {
     stores, queue, defender, pipeline, serveRoot, workDir,

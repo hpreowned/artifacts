@@ -2,7 +2,7 @@
 
 export type State =
   | "awaiting_upload" | "scanning" | "rejected" | "awaiting_approval" | "deploying" | "live" | "failed" | "expired";
-export type Tier = "static" | "python";
+export type Tier = "static" | "python" | "demo";
 export type Severity = "deny" | "warn" | "info";
 
 export interface Finding {
@@ -17,8 +17,8 @@ export interface Manifest {
   schemaVersion: 2;
   name: string;
   tier: Tier;
-  runtime?: "python-1" | null;
-  entrypoint: "index.html" | "app.py";
+  runtime?: "python-1" | "node-20" | null;
+  entrypoint: "index.html" | "app.py" | "package.json";
   externalScripts?: string[];
   ttlDays: number;
   generatedBy: { tool: string; model?: string; session?: string };

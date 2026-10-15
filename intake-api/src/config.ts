@@ -17,7 +17,10 @@ export interface WorkerConfig {
   defenderFakeMalicious: Set<string>;
   gcIntervalSeconds: number;
   pipelineTrigger: "fake" | "ado";
-  ado: { org: string | undefined; project: string | undefined; pipelineId: string | undefined };
+  /** `pipelineId` is the python-tier run; `demoPipelineId` (`ADO_DEMO_PIPELINE_ID`) is `artifact-demo-deploy`'s.
+   *  Static jobs never trigger a pipeline, so neither is read for them. Tier-based selection between the two
+   *  happens inside the trigger implementation (scanner/src/pipeline.ts), not here. */
+  ado: { org: string | undefined; project: string | undefined; pipelineId: string | undefined; demoPipelineId: string | undefined };
   /** Where the fake pipeline posts its awaiting_approval callback. */
   intakeInternalUrl: string;
 }
@@ -62,9 +65,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const port = int(env.PORT, 8080);
   const pipelineTrigger = env.PIPELINE_TRIGGER === "ado" || (env.PIPELINE_TRIGGER === undefined && backend === "azure") ? "ado" : "fake";
-  const ado = { org: env.ADO_ORG, project: env.ADO_PROJECT, pipelineId: env.ADO_PIPELINE_ID };
-  if (pipelineTrigger === "ado" && (!ado.org || !ado.project || !ado.pipelineId)) {
-    throw new Error("PIPELINE_TRIGGER=ado requires ADO_ORG, ADO_PROJECT and ADO_PIPELINE_ID");
+  const ado = { org: env.ADO_ORG, project: env.ADO_PROJECT, pipelineId: env.ADO_PIPELINE_ID, demoPipelineId: env.ADO_DEMO_PIPELINE_ID };
+  if (pipelineTrigger === "ado" && (!ado.org || !ado.project || !ado.pipelineId || !ado.demoPipelineId)) {
+    throw new Error("PIPELINE_TRIGGER=ado requires ADO_ORG, ADO_PROJECT, ADO_PIPELINE_ID and ADO_DEMO_PIPELINE_ID");
   }
   return {
     port,

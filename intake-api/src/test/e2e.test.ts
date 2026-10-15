@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, test } from "node:test";
@@ -42,13 +42,15 @@ interface Status {
   summary?: string;
 }
 
-async function publish(bundle: string, beforeFinalize?: (jobId: string) => void): Promise<{ status: Status; artifactId: string }> {
-  const manifest = JSON.parse(readFileSync(join(CORPUS, bundle, "manifest.json"), "utf8"));
+/** Shared by `publish` (a tests/corpus/* bundle) and the in-test demo fixture below (an arbitrary directory):
+ *  beginPublish -> upload -> finalize -> poll until the worker leaves scanning/deploying. */
+async function publishFrom(dir: string, beforeFinalize?: (jobId: string) => void): Promise<{ status: Status; artifactId: string }> {
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
   const b = await call(stack.baseUrl, "POST", "/v1/publish", { headers: PUBLISHER, json: manifest });
   assert.equal(b.status, 201, b.text);
   const { jobId, uploadToken, uploadUrl } = b.body as { jobId: string; uploadToken: string; uploadUrl: string };
   assert.equal(uploadUrl, `http://localhost:8080/v1/publish/${jobId}/upload`, "PUBLIC_BASE_URL default");
-  const zip = await zipDir(join(CORPUS, bundle));
+  const zip = await zipDir(dir);
   const auth = { authorization: `Bearer ${uploadToken}` };
   assert.equal((await call(stack.baseUrl, "PUT", `/v1/publish/${jobId}/upload`, { headers: auth, body: zip })).status, 201);
   beforeFinalize?.(jobId);
@@ -63,6 +65,27 @@ async function publish(bundle: string, beforeFinalize?: (jobId: string) => void)
   }
   const artifactId = (await stack.stores.jobs.get(jobId))!.artifactId;
   return { status, artifactId };
+}
+
+function publish(bundle: string, beforeFinalize?: (jobId: string) => void): Promise<{ status: Status; artifactId: string }> {
+  return publishFrom(join(CORPUS, bundle), beforeFinalize);
+}
+
+/** A minimal, self-contained demo-tier bundle (D14/§6.13): package.json with a start script, a lockfile,
+ *  one server file, data as a file. Built in a temp dir rather than tests/corpus (that corpus is the scanner
+ *  agent's: see tests/corpus/README or STATUS T80), so this test owns its own fixture end to end. */
+async function writeDemoFixture(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "demo-fixture-"));
+  await mkdir(join(dir, "data"));
+  await writeFile(join(dir, "manifest.json"), JSON.stringify({
+    schemaVersion: 2, name: "demo-ok", tier: "demo", runtime: "node-20", entrypoint: "package.json",
+    ttlDays: 14, generatedBy: { tool: "artifactctl" },
+  }));
+  await writeFile(join(dir, "package.json"), JSON.stringify({ name: "demo-ok", version: "1.0.0", private: true, scripts: { start: "node server.js" } }));
+  await writeFile(join(dir, "package-lock.json"), JSON.stringify({ name: "demo-ok", version: "1.0.0", lockfileVersion: 3 }));
+  await writeFile(join(dir, "server.js"), "const http = require('node:http');\nhttp.createServer((req, res) => res.end('ok')).listen(process.env.PORT || 3000);\n");
+  await writeFile(join(dir, "data", "db.json"), JSON.stringify({ hello: "world" }));
+  return dir;
 }
 
 test("static-ok reaches live with the shell URL, files in SERVE_ROOT, and a mintable view token", async () => {
@@ -95,6 +118,25 @@ test("python-ok passes scanning and the fake pipeline posts awaiting_approval ov
   assert.equal(status.state, "awaiting_approval", JSON.stringify(status));
   assert.equal(status.approval?.group, "artifacts-approvers");
   assert.equal(status.approval?.runUrl, `http://localhost/fake-run/${status.jobId}`);
+});
+
+// Blocked on scanner/src/intake-checks.ts (not this package's directory, see CLAUDE.md "own only your
+// directories"): its IN-007 check is `if (tier === "static") {...} else { require app.py, deny any .html }`,
+// so every non-static tier is treated as python today. contracts/findings.md scopes IN-007 to
+// "static/python" only -- it does not mention demo -- so a demo bundle (no app.py, no .html) should sail
+// through IN-007 untouched; instead it is denied with "python bundle without app.py at the root". Everything
+// on this side (manifest validator, config, the fake trigger, this fixture) already works end to end; flip
+// `skip` to false once intake-checks.ts's else-branch is gated to `tier === "python"` (T80 or a follow-up).
+test("demo-ok (tier demo, in-test fixture) passes scanning and the fake pipeline posts awaiting_approval, same as python-ok", { skip: "blocked on scanner/src/intake-checks.ts IN-007 treating every non-static tier as python; see comment above" }, async () => {
+  const fixture = await writeDemoFixture();
+  try {
+    const { status } = await publishFrom(fixture);
+    assert.equal(status.state, "awaiting_approval", JSON.stringify(status));
+    assert.equal(status.approval?.group, "artifacts-approvers");
+    assert.equal(status.approval?.runUrl, `http://localhost/fake-run/${status.jobId}`);
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
 });
 
 test("a Malicious Defender result is rejected with MAL-001", async () => {

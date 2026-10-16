@@ -32,6 +32,11 @@ accounts; nothing is public.
   `requirements.txt` — dependencies are the platform's, not the artifact's.
 - No subprocess, sockets, `ctypes`, `pickle`, `eval`/`exec`; file writes only under `/tmp`; no outbound
   HTTP (all egress is denied at run time). Runs only after a human approval.
+- **Consider the static export first**: if viewing the app never makes the server answer (charts over fixed
+  data, reports, tables), run it once at publish time and ship the output — Plotly/Altair HTML stays fully
+  interactive client-side — on the static tier: live in seconds, no approval. Streamlit-style widget apps
+  and anything that queries or writes at view time genuinely need this runtime. Python-in-the-browser
+  (WASM) is deliberately not supported today.
 
 ## Node prototype (`tier: node`, runtime `node-20`, entrypoint `package.json`)
 - A self-contained full-stack prototype: `package.json` with a `start` script serving client and API on

@@ -36,7 +36,11 @@ does not include those files).
    trap: if the app fetches `/api/...` (or anything) at run time, what the user viewed locally included
    a live server, and the static export will look the same and silently not work — surface that and
    either bake the data or publish as `node`. Client-side routing must be hash-based on the static
-   tier. Then read the matching section of
+   tier. The same preference applies to Python, where "build" means run-once-and-capture: if viewing
+   never makes the server answer, execute the app at publish time and ship its output (Plotly/Altair
+   export to client-side-interactive HTML; tables and images render to files) as a static artifact.
+   Streamlit widget apps and anything that queries or writes at view time stay on the python tier;
+   Python-in-the-browser (WASM) is not supported. Then read the matching section of
    `${CLAUDE_SKILL_DIR}/references/contract-card.md` — the complete contract this platform enforces.
 2. **Stage and conform what is mechanical**: copy the bundle files into the staging directory (an app's
    own built `dist/` subfolder is fine *inside* the bundle — the platform cares about the bundle root,

@@ -5,7 +5,7 @@ build skill in the organization: if a team knows an artifact will be published i
 during the build is cheaper than retrofitting at publish time. The publishing skill (`publish-to-aks`)
 aligns and verifies against this same card; the platform's scanner enforces it regardless.
 
-Common to every tier: everything ships in one directory (`dist/`), data as files inside it, no secrets or
+Common to every tier: the bundle is one directory (any name; `dist/` by convention) and everything the artifact needs ships inside it, data as files, no secrets or
 internal hostnames anywhere (including comments and sample data), at most 500 files and 25 MiB, no
 symlinks, `ttlDays` 1–90 (default 14) and the artifact disappears at TTL. Viewers sign in with corporate
 accounts; nothing is public.

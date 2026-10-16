@@ -20,20 +20,31 @@ If the connector is not available, stop and tell the user to ask a Claude org Ow
 
 ## Alignment workflow
 
-1. **Identify the tier** from what exists: plain page assets → `static`; a single `app.py` → `python`;
-   a `package.json` application → `node`. Read the matching section of
-   `${CLAUDE_SKILL_DIR}/references/contract-card.md` — it is the complete contract this platform enforces.
-2. **Conform what is mechanical, in place, into `dist/`**: assemble the files, write
-   `dist/manifest.json` per `${CLAUDE_SKILL_DIR}/references/manifest-schema.json` (`schemaVersion` 2,
-   `name` lowercase-dashes, `tier`, `runtime` — `null`/`python-1`/`node-20`, `entrypoint` —
-   `index.html`/`app.py`/`package.json`, `externalScripts`, `ttlDays` 1–90 default 14,
-   `generatedBy: {"tool": "cowork"}`), pin CDN script URLs to exact versions and list them, drop files
-   the contract forbids from the bundle (`node_modules/`, `.env*`, `.npmrc`, stray types).
+The user's source tree is read-only to you. All alignment happens in a fresh **staging directory** —
+`dist/` by convention, any name works, every script below takes it as an argument. Copy what the bundle
+needs into it and conform the copy; never delete or rewrite files in the user's project to make it
+comply (removing their `.env` or `node_modules` would break their local setup, and the bundle simply
+does not include those files).
+
+1. **Identify the tier** from what exists: nothing executes server-side → `static`; a single `app.py`
+   server → `python`; a `package.json` application with its own server → `node`. When two tiers are
+   genuinely viable — a thin server whose data could ship as files makes a fine static artifact — put
+   the choice to the user: static goes live in seconds with no approval; python/node wait for a human
+   approval and run with more machinery. Then read the matching section of
+   `${CLAUDE_SKILL_DIR}/references/contract-card.md` — the complete contract this platform enforces.
+2. **Stage and conform what is mechanical**: copy the bundle files into the staging directory (an app's
+   own built `dist/` subfolder is fine *inside* the bundle — the platform cares about the bundle root,
+   not the name), leave out what the contract forbids (`node_modules/`, `.env*`, `.npmrc`, stray file
+   types), pin CDN script URLs to exact versions, and write `<staging>/manifest.json` per
+   `${CLAUDE_SKILL_DIR}/references/manifest-schema.json`: `schemaVersion` 2, `name` lowercase-dashes,
+   `tier`, `runtime` (`null`/`python-1`/`node-20`), `entrypoint` (`index.html`/`app.py`/`package.json`),
+   `externalScripts`, `ttlDays` 1–90 default 14, and `generatedBy.tool` set honestly to where you are
+   running (`"cowork"` or `"claude-code"`).
 3. **Do not silently change behavior.** Removing a password form, an outbound fetch, or a subprocess
    call changes what the app does. Flag such findings to the user with the contract rule and why it
-   exists; change the code only when the user agrees or the change is behavior-preserving (for example
-   moving inline data to a `.json` file).
-4. **Run `${CLAUDE_SKILL_DIR}/scripts/preflight.sh dist/`.** One line per finding,
+   exists; change the staged copy only when the user agrees or the change is behavior-preserving (for
+   example moving inline data to a `.json` file).
+4. **Run `${CLAUDE_SKILL_DIR}/scripts/preflight.sh <staging>`.** One line per finding,
    `RULE file:line message`, exit 1 when something would be rejected. Fix or escalate per rule 3 until
    it exits 0. `(warn)`/`(info)` lines do not block but are worth relaying.
 5. **Tell the user what alignment found** before publishing anything that needed more than packaging:
@@ -44,7 +55,7 @@ If the connector is not available, stop and tell the user to ask a Claude org Ow
 
 6. Call `beginPublish` with the manifest object. Keep `jobId`, `uploadUrl`, `uploadToken`. The token is
    single use and expires in 10 minutes, so continue immediately.
-7. Run `${CLAUDE_SKILL_DIR}/scripts/upload.sh dist/ "<uploadUrl>" "<uploadToken>"`.
+7. Run `${CLAUDE_SKILL_DIR}/scripts/upload.sh <staging> "<uploadUrl>" "<uploadToken>"`.
    - `UPLOADED <jobId> <sha256>` on exit 0: queued for scanning.
    - `NETWORK_BLOCKED` on exit 2: the sandbox cannot reach the publish host. Stop. Tell the user the
      Cowork network-egress allowlist needs the APIM host (`mcp.corp.com`). Do not retry, do not inline

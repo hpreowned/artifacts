@@ -30,7 +30,13 @@ does not include those files).
    server → `python`; a `package.json` application with its own server → `node`. When two tiers are
    genuinely viable — a thin server whose data could ship as files makes a fine static artifact — put
    the choice to the user: static goes live in seconds with no approval; python/node wait for a human
-   approval and run with more machinery. Then read the matching section of
+   approval and run with more machinery. **Prefer the static export when it is honest**: build the app
+   yourself (`npm run build`) into the staging directory and bake the data in as files — do not assume
+   a build already exists, dev-serving produces none. Before offering static, check for the dev-proxy
+   trap: if the app fetches `/api/...` (or anything) at run time, what the user viewed locally included
+   a live server, and the static export will look the same and silently not work — surface that and
+   either bake the data or publish as `node`. Client-side routing must be hash-based on the static
+   tier. Then read the matching section of
    `${CLAUDE_SKILL_DIR}/references/contract-card.md` — the complete contract this platform enforces.
 2. **Stage and conform what is mechanical**: copy the bundle files into the staging directory (an app's
    own built `dist/` subfolder is fine *inside* the bundle — the platform cares about the bundle root,

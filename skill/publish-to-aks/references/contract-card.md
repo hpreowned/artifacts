@@ -11,12 +11,21 @@ symlinks, `ttlDays` 1–90 (default 14) and the artifact disappears at TTL. View
 accounts; nothing is public.
 
 ## Static (`tier: static`, entrypoint `index.html`)
-- Plain files, no build step, no server. File types: `html css js json svg png jpg jpeg webp woff2 txt md csv`.
-- Scripts only from `https://cdnjs.cloudflare.com/ajax/libs/` or `https://cdn.jsdelivr.net/npm/`, exact
-  versions, each listed in the manifest's `externalScripts`.
+- Plain files, no server. File types: `html css js json svg png jpg jpeg webp woff2 txt md csv`.
+- **Built output is welcome**: a React/Vue/anything app compiled on the author's side (for example
+  `vite build`) is a static artifact — local script bundles are served from the artifact's own origin.
+  What matters is what remains at run time: no server, no runtime data. Bake all data into the bundle
+  at build time. Two build-time gotchas: an app that worked locally against a dev-server proxy loses
+  that server when exported static (its fetches will silently die), and client-side routers should use
+  hash routing — a deep link to a history-API route 404s.
+- *External* scripts only from `https://cdnjs.cloudflare.com/ajax/libs/` or `https://cdn.jsdelivr.net/npm/`,
+  exact versions, each listed in the manifest's `externalScripts`. Dependencies compiled into a local
+  bundle ship uninspected and run under the same browser containment as every other line of JS.
 - Serving blocks at the browser: no `fetch`/XHR/WebSocket (`connect-src 'none'`), no forms posting
-  anywhere, no iframes/embeds, no meta refresh, no password inputs, no popups or downloads. Data that
-  would be fetched must ship as a file.
+  anywhere, no iframes/embeds, no meta refresh, no password inputs, no popups or downloads.
+- Honesty note for compiled bundles: the scanner inspects source-level patterns; a page whose DOM is
+  built at run time by minified JS shows the scanner an empty shell. Detection weakens, containment
+  does not — which is the platform's design (containment first).
 
 ## Python (`tier: python`, runtime `python-1`, entrypoint `app.py`)
 - One `app.py`; only the curated runtime's libraries are importable (see `python-1-libraries.md`); no

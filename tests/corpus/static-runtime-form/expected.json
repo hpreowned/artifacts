@@ -1,0 +1,5 @@
+{
+  "state": "live",
+  "rules": [],
+  "note": "DOCUMENTED BLIND SPOT: this page builds a password form at runtime via DOM calls, so the static HTML scanner (HTML-005) sees an empty shell and the artifact goes live. Accepted because containment carries it: form-action and connect-src block any transmission, the frame cannot navigate out, and the viewer banner warns against entering credentials. Detection for rendered-at-runtime intent is the parked LLM-review stage (LLM-001)."
+}

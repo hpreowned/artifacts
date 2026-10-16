@@ -1,0 +1,5 @@
+{
+  "state": "live",
+  "rules": [],
+  "note": "A production-built SPA (local bundle, baked data) is a static artifact; author-side compilation replaces the platform build (DESIGN D15)."
+}

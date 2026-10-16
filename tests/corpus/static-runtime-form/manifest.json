@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 2,
+  "name": "runtime-form",
+  "tier": "static",
+  "runtime": null,
+  "entrypoint": "index.html",
+  "externalScripts": [],
+  "ttlDays": 7,
+  "generatedBy": {
+    "tool": "artifactctl",
+    "model": "test-corpus",
+    "session": "corpus"
+  }
+}

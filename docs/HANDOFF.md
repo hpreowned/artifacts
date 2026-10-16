@@ -492,3 +492,12 @@ Added on 2026-10-15, travels from snapshot-2 on. The launchpad's three runtimes 
 - The build stage needs the JFrog **npm** mirror reachable from the pool (`npm ci --ignore-scripts --registry https://jfrog.corp.com/artifactory/api/npm/npm-remote/`) and docker build/push rights for `jfrog.corp.com/artifacts/node-<artifactId>` images.
 - Charts: `charts/artifact-node` (validated offline by `charts/tests/node-conformance.sh`, wired into `deploy/validate.sh`). GC already covers `node-*` releases.
 - M8's gate (STATUS.md) runs on the cluster exactly like M5's, with `tests/corpus/node-ok` as the acceptance bundle.
+
+## Addendum: proving the skill before the connector exists
+
+`mcp-local/` is a local stdio MCP server giving **Claude Code** the production tool pair against the local
+intake API. Install the skill (`cp -r skill/publish-to-aks ~/.claude/skills/`), register the server
+(`claude mcp add artifacts -- node <repo>/mcp-local/dist/mcp-local/src/main.js`), start the stack
+(`scripts/run-all.sh`), and publish from a Claude Code session. This validates skill triggering, staging,
+preflight, the tool round-trip and state reporting without Entra, APIM, Cowork or the cluster — do it
+before I1–I5, so connector work starts against a skill already known to behave. See `mcp-local/README.md`.

@@ -269,7 +269,7 @@ description: Publish an HTML/JS or small Python artifact to the internal AKS art
 4. Run `${CLAUDE_SKILL_DIR}/scripts/upload.sh dist/ "<uploadUrl>" "<uploadToken>"`. If it prints NETWORK_BLOCKED, stop and tell the user the Cowork egress allowlist needs the APIM host. Do not retry with inline data.
 5. Poll `getPublishStatus` every 10 s for up to 10 min. On `rejected`, fix each finding and resubmit (max 3 attempts). On `awaiting_approval`, report the approver group and stop. On `live`, report the URL and expiry.
 ```
-The preflight is **feedback, not security**. The pipeline re-checks everything. Skill constraints: Agent Skills format, folder name equals `name`, description ≤ 1,024 chars, SKILL.md under 500 lines, scripts under `scripts/`. Cowork loads skills from your account's skills repo, not from `~/.claude/skills`.
+The preflight is **feedback, not security**. The pipeline re-checks everything. Positioning (org feedback, 2026-10-16): the skill is a **last-mile publisher**, not an authoring guide — it triggers only on explicit publish intent, aligns the finished artifact with the contract (mechanical fixes in place, behavior-changing fixes only with the user's consent), and publishes. Authoring belongs to the organization's own build skills; for teams that want to conform during the build, the contract lives as a standalone, borrowable one-pager at `references/contract-card.md`. Skill constraints: Agent Skills format, folder name equals `name`, description ≤ 1,024 chars, SKILL.md under 500 lines, scripts under `scripts/`. Cowork loads skills from your account's skills repo, not from `~/.claude/skills`.
 
 Repo layout:
 ```

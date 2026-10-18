@@ -7,7 +7,7 @@ import { signToken } from '../src/signed-token.js';
 import { ARTIFACT_ID, GRANT, NOW, SESSION_KEY, startShell, type TestShell } from './helpers.js';
 
 const EXPECTED_CSP =
-  `default-src 'self'; frame-src http://*.localhost:8081; script-src 'self'; style-src 'self' '${STYLE_HASH}'; ` +
+  `default-src 'self'; frame-src http://*.localhost; script-src 'self'; style-src 'self' '${STYLE_HASH}'; ` +
   "base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 describe('viewer-shell with DEV_AUTH', () => {

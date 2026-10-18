@@ -304,7 +304,7 @@ Cache-Control: private, no-store
 ```
 `'unsafe-inline'` is unavoidable for single-file artifacts in v1. Phase 3: compute SHA-256 of each inline `<script>` at publish time and emit `script-src 'sha256-…'` per artifact from Blob metadata. The `sandbox` list without `allow-downloads`, `allow-popups`, `allow-top-navigation` makes downloads inert and closes the popup channel. `allow-forms` keeps in-page forms working; `form-action 'none'` stops them posting anywhere.
 
-Viewer shell page CSP: `default-src 'self'; frame-src https://*.corp-artifacts.net; script-src 'self'; style-src 'self'`. Iframe attribute: `sandbox="allow-scripts allow-same-origin allow-forms allow-modals"`.
+Viewer shell page CSP (a wildcard host-source may not carry a port, so the directive uses the bare domain): `default-src 'self'; frame-src https://*.corp-artifacts.net; script-src 'self'; style-src 'self'`. Iframe attribute: `sandbox="allow-scripts allow-same-origin allow-forms allow-modals"`.
 
 ### 6.5 Curated Python runtime (your CI, your JFrog base)
 ```dockerfile

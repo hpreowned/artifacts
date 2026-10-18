@@ -19,12 +19,25 @@ export const STYLE_HASH = `sha256-${createHash('sha256').update(STYLE, 'utf8').d
 export function shellHeaders(config: ShellConfig): Record<string, string> {
   return {
     'Content-Security-Policy':
-      `default-src 'self'; frame-src ${config.artifactScheme}://*.${config.artifactDomain}; script-src 'self'; ` +
+      `default-src 'self'; frame-src ${frameSrc(config)}; script-src 'self'; ` +
       `style-src 'self' '${STYLE_HASH}'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'Cache-Control': 'private, no-store',
   };
+}
+
+/**
+ * CSP host-source for the artifact origins.
+ *
+ * A wildcard host-source may not carry a port: `http://*.localhost:8081` is rejected outright by
+ * browsers, which is only visible in local dev because production uses the default 443 and so never
+ * writes a port. Dropping the port widens the source to any port on that domain — acceptable for the
+ * dev domain (`localhost`), and in production the domain is a dedicated usercontent domain anyway.
+ */
+function frameSrc(config: { artifactScheme: string; artifactDomain: string }): string {
+  const host = config.artifactDomain.replace(/:\d+$/, "");
+  return `${config.artifactScheme}://*.${host}`;
 }
 
 export function renderViewerPage(args: { artifactId: string; iframeSrc: string; expiresAt?: string }): string {

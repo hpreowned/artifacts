@@ -39,7 +39,7 @@ OUT=$(ARTIFACTS_API_URL="$BASE" ARTIFACTS_DEV_OID=dev-user bash "$NEG" --interva
 check "$RC" 0 "full run against the corpus fake exits 0"
 contains "$OUT" "^negative.sh: $TOTAL ok, 0 mismatch, $TOTAL total$" "every bundle matched"
 contains "$OUT" "^static-bad-manifest +rejected +rejected +IN-006 +ok$" "400 at beginPublish counts as rejected IN-006"
-contains "$OUT" "^python-ok +awaiting_approval +awaiting_approval +- +ok$" "python bundle stops at awaiting_approval"
+contains "$OUT" "^python-ok +live +live +- +ok$" "clean python bundle goes live on the D16 auto path"
 
 OUT=$(ARTIFACTS_API_URL="$BASE" ARTIFACTS_DEV_OID=dev-user bash "$NEG" --interval 0 --only static-ok 2>&1); RC=$?
 check "$RC" 0 "--only static-ok exits 0"

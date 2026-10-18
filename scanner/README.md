@@ -76,7 +76,7 @@ Read by `../intake-api/src/config.ts` (shared), together with the API's own vari
 | `PIPELINE_TRIGGER` | `fake` for memory, `ado` for azure | `fake` or `ado`. |
 | `ADO_ORG`, `ADO_PROJECT`, `ADO_PIPELINE_ID` | required for `ado` | The deploy pipeline (DESIGN §6.12). |
 | `INTAKE_INTERNAL_URL` | `http://localhost:${PORT}` | Where the fake trigger posts `awaiting_approval`. |
-| `NPM_REGISTRY_HOST` | `jfrog.corp.com` | JS-002: the host every prototype-bundle lockfile `resolved` URL must match. Read directly from `process.env` in `src/select.ts`, scanner-only (not part of `../intake-api/src/config.ts`). |
+| `NPM_REGISTRY_HOST` | `jfrog.corp.com` | JS-002: the host (or comma-separated hosts; the dev stack lists two) every prototype-bundle lockfile `resolved` URL must match. Read directly from `process.env` in `src/select.ts`, scanner-only (not part of `../intake-api/src/config.ts`). |
 | `AZURE_CLIENT_ID` etc. | – | Read by `DefaultAzureCredential` for Blob, Service Bus and Azure DevOps. |
 
 ## Tests

@@ -212,3 +212,8 @@ workload identity. `BlobBundleStore.put` deliberately sets no metadata after upl
   the scanner's corpus test). `tests/negative.sh` should treat a 400 with `IN-006` findings as the expected
   `rejected`.
 - Rate limiting (429) is APIM's job; this service does not implement it.
+
+## Dev-only route
+
+`GET /dev/approval/{jobId}` (DEV_AUTH=1 only; 404 otherwise) is where the fake pipeline's run URL points in the local stack: it explains the job's state and shows the `/events` callbacks to play approve or decline by hand. Never reachable in production, where the run URL is the Azure DevOps run.
+

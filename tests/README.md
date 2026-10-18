@@ -31,7 +31,7 @@ Seven bundles exercise the node tier (`tier: "node"`, `runtime: "node-20"`, `ent
 - `node-ok`: a clean bundle with pinned dependencies and a lockfile whose `resolved` URLs point at the JFrog npm mirror (`https://jfrog.corp.com/artifactory/api/npm/npm-remote/...`). Expected: `awaiting_approval`, like a python-tier pass — the node tier follows the python state path and hands off to the same pipeline-trigger interface.
 - `node-child-process`: `server/index.js` adds `const { execSync } = require("child_process")`. Expected: `rejected`, JS-001.
 - `node-no-lockfile`: `package-lock.json` is missing entirely. Expected: `rejected`, JS-002.
-- `node-foreign-registry`: the lockfile has one dependency `resolved` at `https://registry.npmjs.org/...` instead of the JFrog mirror. Expected: `rejected`, JS-002.
+- `node-foreign-registry`: the lockfile has one dependency `resolved` at `https://npm.pkg.github.com/...` (foreign under the dev list too, which admits the public registry for laptop lockfiles) instead of the JFrog mirror. Expected: `rejected`, JS-002.
 - `node-node-modules`: ships `node_modules/leftpad/index.js`. Expected: `rejected`, JS-003 (its contents are never scanned for the other JS rules).
 - `node-env-file`: ships a `.env` with an innocuous placeholder value (no secret-shaped content — IN-005 lets `.env`/`.env.*`/`.npmrc` extract for node bundles specifically so JS-004 can name them, rather than a generic "unknown file type"). Expected: `rejected`, JS-004.
 - `node-lifecycle-script`: `package.json` carries a `postinstall` script alongside `start`. Expected: `rejected`, JS-006.

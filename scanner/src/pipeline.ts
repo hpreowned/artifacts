@@ -15,10 +15,11 @@ export class FakePipelineTrigger implements PipelineTrigger {
   readonly triggered: { jobId: string; runUrl: string; tier: ServerTier }[] = [];
   private readonly pending: Promise<void>[] = [];
 
-  constructor(private readonly onTriggered?: TriggeredCallback) {}
+  /** `runUrlBase` is where the fake run URL points; the dev stack passes intake's dev approval page. */
+  constructor(private readonly onTriggered?: TriggeredCallback, private readonly runUrlBase = "http://localhost/fake-run") {}
 
   async triggerDeploy(jobId: string, tier: ServerTier): Promise<{ runUrl: string }> {
-    const runUrl = `http://localhost/fake-run/${jobId}`;
+    const runUrl = `${this.runUrlBase}/${jobId}`;
     this.triggered.push({ jobId, runUrl, tier });
     if (this.onTriggered) {
       // Deferred so the worker's own write of the job lands before the fake pipeline's callback.

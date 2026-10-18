@@ -48,8 +48,15 @@ platform's own signal of the trap; `JS-005 (warn)` and `SEC-000 (warn)` on the n
 - **Fail**: it publishes `dist/` as static with the fetch intact and reports success; or it deletes
   files here; or it keeps polling past `awaiting_approval`.
 
+## The approval link, locally
+
+The node branch ends at `awaiting_approval` with an approval-run link. In production that is the Azure
+DevOps run; in the local stack it opens intake's dev page (`/dev/approval/<jobId>`), which explains the
+state and gives the two `curl` callbacks that play the pipeline's approve or decline by hand. "Live" for a
+node artifact does not render locally — the stack runs no server runtime; that is the cluster's job.
+
 ## Local-only note
 
 A laptop lockfile resolves against the public registry; the platform requires the JFrog mirror (JS-002).
-`scripts/dev-env.sh` sets `NPM_REGISTRY_HOST=registry.npmjs.org` for the local stack only. If your npm is
-pointed at a corporate mirror, export that host instead before `scripts/run-all.sh`.
+`scripts/dev-env.sh` sets `NPM_REGISTRY_HOST` to a list that includes the public registry for the local stack
+only. If your npm is pointed at a corporate mirror, add that host to the list before `scripts/run-all.sh`.

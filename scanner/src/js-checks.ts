@@ -10,7 +10,10 @@ import { extensionOf } from "./limits.js";
 import { severityOf } from "./policy.js";
 
 export interface JsOptions {
-  /** JFrog npm mirror host that every lockfile `resolved` URL must match (env NPM_REGISTRY_HOST). */
+  /**
+   * Registry host(s) every lockfile `resolved` URL must match (env NPM_REGISTRY_HOST). Production pins the
+   * single JFrog host; the dev stack passes a comma-separated list so laptop lockfiles are valid too.
+   */
   npmRegistryHost: string;
 }
 
@@ -96,6 +99,7 @@ async function lockfileCheck(dir: string, files: string[], opts: JsOptions): Pro
     return [f("JS-002", "package-lock.json", undefined, `package-lock.json is not valid JSON: ${(err as Error).message}`)];
   }
   const findings: Finding[] = [];
+  const allowed = new Set(opts.npmRegistryHost.split(",").map((h) => h.trim()).filter(Boolean));
   for (const url of resolvedUrls(lock)) {
     let host: string;
     try {
@@ -104,7 +108,7 @@ async function lockfileCheck(dir: string, files: string[], opts: JsOptions): Pro
       findings.push(f("JS-002", "package-lock.json", undefined, `resolved URL "${url}" could not be parsed`));
       continue;
     }
-    if (host !== opts.npmRegistryHost) {
+    if (!allowed.has(host)) {
       findings.push(f("JS-002", "package-lock.json", undefined, `dependency resolved from "${host}", not the JFrog mirror ("${opts.npmRegistryHost}")`));
     }
   }

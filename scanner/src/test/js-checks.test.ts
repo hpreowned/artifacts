@@ -143,3 +143,24 @@ test("JS-006: no scripts.start, and a lifecycle script", async () => {
     assert.deepEqual(rules(await jsChecks(dir, names, OPTS)), ["JS-006"]);
   });
 });
+
+test("JS-002: NPM_REGISTRY_HOST may list several hosts (dev stack); any listed host is accepted, others still fail", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "js002-multi-"));
+  try {
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "x", scripts: { start: "node a.js" } }));
+    await writeFile(join(dir, "package-lock.json"), JSON.stringify({
+      packages: {
+        "node_modules/a": { resolved: "https://registry.npmjs.org/a/-/a-1.0.0.tgz" },
+        "node_modules/b": { resolved: "https://jfrog.corp.com/artifactory/api/npm/npm-remote/b/-/b-1.0.0.tgz" },
+        "node_modules/c": { resolved: "https://evil.example/c/-/c-1.0.0.tgz" },
+      },
+    }));
+    const found = await jsChecks(dir, ["package.json", "package-lock.json"], { npmRegistryHost: "jfrog.corp.com, registry.npmjs.org" });
+    const js002 = found.filter((x) => x.rule === "JS-002");
+    assert.equal(js002.length, 1, JSON.stringify(js002));
+    assert.match(js002[0]!.message, /evil\.example/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+

@@ -19,7 +19,7 @@ export function createPipelineTrigger(cfg: Config): PipelineTrigger {
   }
   const callback = cfg.pipelineToken ? postAwaitingApproval(cfg.worker.intakeInternalUrl, cfg.pipelineToken) : undefined;
   if (!callback) console.warn("[worker] PIPELINE_TOKEN is not set: the fake pipeline will not post awaiting_approval");
-  return new FakePipelineTrigger(callback);
+  return new FakePipelineTrigger(callback, `${cfg.publicBaseUrl}/dev/approval`);
 }
 
 export function workerOptions(cfg: Config): WorkerOptions {

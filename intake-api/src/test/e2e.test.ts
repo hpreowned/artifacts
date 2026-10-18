@@ -117,7 +117,7 @@ test("python-ok passes scanning and the fake pipeline posts awaiting_approval ov
   const { status } = await publish("python-ok");
   assert.equal(status.state, "awaiting_approval", JSON.stringify(status));
   assert.equal(status.approval?.group, "artifacts-approvers");
-  assert.equal(status.approval?.runUrl, `http://localhost/fake-run/${status.jobId}`);
+  assert.equal(status.approval?.runUrl, `${stack.baseUrl}/dev/approval/${status.jobId}`, "the local stack points the run URL at its own dev approval page");
 });
 
 // Blocked on scanner/src/intake-checks.ts (not this package's directory, see CLAUDE.md "own only your
@@ -132,7 +132,7 @@ test("node-ok (tier prototype, in-test fixture) passes scanning and the fake pip
     const { status } = await publishFrom(fixture);
     assert.equal(status.state, "awaiting_approval", JSON.stringify(status));
     assert.equal(status.approval?.group, "artifacts-approvers");
-    assert.equal(status.approval?.runUrl, `http://localhost/fake-run/${status.jobId}`);
+    assert.equal(status.approval?.runUrl, `${stack.baseUrl}/dev/approval/${status.jobId}`, "the local stack points the run URL at its own dev approval page");
   } finally {
     await rm(fixture, { recursive: true, force: true });
   }
@@ -142,4 +142,21 @@ test("a Malicious Defender result is rejected with MAL-001", async () => {
   const { status } = await publish("static-ok", (jobId) => stack.defender.force(jobId, "Malicious"));
   assert.equal(status.state, "rejected");
   assert.ok(status.findings?.some((f) => f.rule === "MAL-001"));
+});
+
+test("dev approval page: the fake run URL resolves to an explanation under DEV_AUTH, 404 for unknown jobs", async () => {
+  const begin = await call(stack.baseUrl, "POST", "/v1/publish", { headers: PUBLISHER, json: {
+    schemaVersion: 2, name: "dev-page", tier: "static", runtime: null, entrypoint: "index.html", externalScripts: [], ttlDays: 1,
+    generatedBy: { tool: "artifactctl" },
+  } });
+  assert.equal(begin.status, 201, begin.text);
+  const jobId = (begin.body as { jobId: string }).jobId;
+  const page = await fetch(`${stack.baseUrl}/dev/approval/${jobId}`);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /Local stack/);
+  assert.match(html, new RegExp(`/v1/publish/${jobId}/events`));
+  assert.match(html, /state&quot;:&quot;deploying/, "the approve callback is shown, HTML-escaped");
+  const missing = await fetch(`${stack.baseUrl}/dev/approval/job_00000000000000000000`);
+  assert.equal(missing.status, 404);
 });

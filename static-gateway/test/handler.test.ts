@@ -57,15 +57,32 @@ describe('static-gateway handler', () => {
     }
   });
 
-  test('rule 2: Sec-Fetch-Dest: document is redirected to the shell before any token or cookie logic', async () => {
-    const r = await s.request({ path: `/deep/page.html?t=${viewToken()}&x=1`, headers: { 'sec-fetch-dest': 'document', ...sessionCookie() } });
+  test('rule 3: a real top-level load (typed URL) is redirected to the shell', async () => {
+    // A browser sends Sec-Fetch-Site: none for an address-bar navigation and cross-site for a frame
+    // load from the shell; both carry Sec-Fetch-Dest: document, so the destination alone is not enough.
+    const r = await s.request({ path: '/', headers: { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'none' } });
     assert.equal(r.status, 302);
     assert.equal(r.headers['location'], `${SHELL}/view/${ARTIFACT_ID}`);
     assert.equal(r.headers['set-cookie'], undefined);
     const r2 = await s.request({ path: '/', headers: { 'sec-fetch-dest': 'Document' } });
-    assert.equal(r2.status, 302, 'value compared case-insensitively');
+    assert.equal(r2.status, 302, 'value compared case-insensitively; missing site header treated as top level');
     const r3 = await s.request({ path: '/', headers: { 'sec-fetch-dest': 'iframe', ...sessionCookie() } });
     assert.equal(r3.status, 200, 'iframe destination is served');
+  });
+
+  test('regression: the shell iframe load (document + cross-site + token) exchanges the token, it is not bounced', async () => {
+    // The bug this covers: Sec-Fetch-Dest is "document" for an iframe too, so a destination-only check
+    // bounced the shell's own frame back to the shell, which then rendered itself inside itself.
+    const r = await s.request({
+      path: `/?t=${viewToken()}`,
+      headers: { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'cross-site' },
+    });
+    assert.equal(r.status, 302, 'token exchange, not a bounce to the shell');
+    assert.equal(r.headers['location'], '/');
+    assert.match(String(r.headers['set-cookie']), /session=/);
+    // and once the cookie exists, the frame renders without being bounced
+    const r2 = await s.request({ path: '/', headers: { 'sec-fetch-dest': 'document', 'sec-fetch-site': 'cross-site', ...sessionCookie() } });
+    assert.equal(r2.status, 200);
   });
 
   test('rule 3: valid ?t= sets the __Host- session cookie and redirects to the same path without t', async () => {

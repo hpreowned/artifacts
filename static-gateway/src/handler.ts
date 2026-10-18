@@ -51,14 +51,11 @@ export function createHandler(config: GatewayConfig, now: Clock = () => Math.flo
       return text(res, 405, 'Method not allowed');
     }
 
-    // 2. Top-level loads go to the shell; the raw origin only renders inside its iframe.
-    if (String(req.headers['sec-fetch-dest'] ?? '').toLowerCase() === 'document') {
-      return redirect(res, `${config.shellOrigin}/view/${artifactId}`);
-    }
-
     const url = new URL(req.url ?? '/', 'http://placeholder');
 
-    // 3. One-shot view token → session cookie → same path without `t`.
+    // 2. One-shot view token → session cookie → same path without `t`. This runs BEFORE the top-level
+    // check: a browser sends Sec-Fetch-Dest: document for an iframe load too, so a token-bearing request
+    // is the shell's frame doing exactly what it should, whatever the destination header says.
     const t = url.searchParams.get('t');
     if (t !== null) {
       const payload = verifyToken(config.viewTokenKey, t, now());
@@ -67,6 +64,17 @@ export function createHandler(config: GatewayConfig, now: Clock = () => Math.flo
         res.setHeader('Set-Cookie', sessionCookie(artifactId));
         return redirect(res, url.pathname + url.search);
       }
+    }
+
+    // 3. A real top-level load (address bar, pasted link) goes to the shell; the raw origin renders only
+    // inside the shell's iframe. Sec-Fetch-Dest alone cannot tell the two apart — both say "document" —
+    // so require Sec-Fetch-Site too: a frame load from the shell is cross-site, a typed URL is none.
+    // Requests that carry a valid session cookie are already inside the frame and are left alone.
+    const dest = String(req.headers['sec-fetch-dest'] ?? '').toLowerCase();
+    const site = String(req.headers['sec-fetch-site'] ?? '').toLowerCase();
+    const topLevel = dest === 'document' && (site === '' || site === 'none');
+    if (topLevel && !hasValidSession(req, artifactId)) {
+      return redirect(res, `${config.shellOrigin}/view/${artifactId}`);
     }
 
     // 4. Otherwise a valid session cookie for this artifact is required.

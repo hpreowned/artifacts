@@ -290,7 +290,7 @@ The connector is registered separately by a Claude org Owner (Settings → Conne
 
 ### 6.4 Static gateway (Node, your JFrog Node image)
 Behaviour, in order, for a request to `https://<id>.corp-artifacts.net/<path>`:
-1. If `Sec-Fetch-Dest: document` → 302 to `https://artifacts.corp.com/view/<id>`. The raw origin only renders inside the shell.
+1. If `?t=` is present, handle the token first (rule 2) — a browser sends `Sec-Fetch-Dest: document` for an **iframe** load as well as a top-level one, so destination alone cannot tell the shell's own frame from a pasted link. A real top-level load is `Sec-Fetch-Dest: document` **and** `Sec-Fetch-Site: none` (or absent) **and** no valid session cookie → 302 to `https://artifacts.corp.com/view/<id>`. The raw origin only renders inside the shell.
 2. If `?t=<token>` present → verify HMAC (key from Key Vault via Secrets Store CSI), check `artifactId` and expiry (5 min) → set `__Host-session=<signed session token>; Secure; HttpOnly; SameSite=None; Partitioned; Path=/` → 302 to the same path without `?t`. `SameSite=None` is required, not optional: the artifact origin is a different registrable domain from the shell by design (§2a), so every request from inside the shell's iframe is cross-site and a `Strict` or `Lax` cookie would never be sent. `Partitioned` (CHIPS) keys the cookie to the shell as the top-level site, so it keeps working when the browser blocks third-party cookies and cannot be replayed from any other embedding page.
 3. Else require a valid `__Host-session` cookie; otherwise 403.
 4. Serve `/srv/<id>/<path>` from the read-only Blob CSI mount with these headers on every response:
@@ -648,6 +648,7 @@ Per-artifact CSP script hashes; per-user quotas; audit log of who published and 
 | ConfigMap 1 MiB | Large Python artifact rejected | Correct for v1; init-container fetch from Blob is the Phase 3 path |
 | Blob CSI attribute cache | Republished static artifact serves stale content | Short attribute and entry timeouts, or new `<id>` per publish with a stable alias |
 | `'unsafe-inline'` | Injected inline script in an artifact also runs | Expected in v1; Phase 3 hashes close it |
+| Gateway bounces the shell's own iframe | The viewer shell renders nested inside itself and the console shows a 403 | `Sec-Fetch-Dest` is `document` for iframes too; check the token first and require `Sec-Fetch-Site: none` for the top-level redirect (found in the first real-browser test, 2026-10-18) |
 | Session cookie set with `SameSite=Strict` or `Lax` | Every artifact 403s inside the shell frame on the second request | Cross-site by design; `SameSite=None; Partitioned` (found by the serve agent's review, 2026-10-14) |
 | Defender scan latency varies | A publish waits longer than expected on stage 3 | Microsoft gives no SLA; small files scan in seconds. Overlap with the Job, 60 s timeout, timeout routes to human review rather than allow or reject |
 | Metadata set right after upload | Defender marks the scan `Error` or `Not scanned` | Set metadata in the upload call; never a second call |

@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Local stdio MCP server exposing beginPublish and getPublishStatus for Claude Code, backed by the local intake API.",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && chmod +x dist/mcp-local/src/main.js",
     "start": "node dist/mcp-local/src/main.js",
     "test": "npm run build && node --test dist/mcp-local/src/test/*.test.js"
   },

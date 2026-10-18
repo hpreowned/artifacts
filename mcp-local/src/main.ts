@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Local stdio MCP server for Claude Code. Fronts the local intake API (tests/dev-stack.sh) with the same two
 // tools APIM publishes in production, so the publish-to-aks skill can be exercised end to end with no Azure.
 //

@@ -10,13 +10,23 @@ APIM or cluster work exists. Cowork cannot use it (Cowork only reads remote conn
 ```sh
 npm --prefix mcp-local ci && npm --prefix mcp-local run build   # or: scripts/install.sh
 scripts/run-all.sh                                              # intake 8080, gateway 8081, shell 8082
-claude mcp add artifacts -- node "$(pwd)/mcp-local/dist/mcp-local/src/main.js"
+claude mcp add --scope user artifacts node "$(pwd)/mcp-local/dist/mcp-local/src/main.js"
 cp -r skill/publish-to-aks ~/.claude/skills/                    # install the skill for Claude Code
 ```
 
 Then, in Claude Code, build something and say *"publish this internally"*. The skill should stage the
 bundle, run preflight, call `beginPublish`, upload via its own `upload.sh`, poll `getPublishStatus`, and
 report the viewer URL (static) or the approval run (python/node).
+
+If `claude mcp add` rejects the argument form (versions differ), add it to `~/.claude.json` by hand:
+
+```json
+{ "mcpServers": { "artifacts": { "command": "node", "args": ["/abs/path/to/repo/mcp-local/dist/mcp-local/src/main.js"] } } }
+```
+
+The built entrypoint carries a `#!/usr/bin/env node` shebang and the execute bit, so running it directly
+works too. A `permission denied` from the shell means the path was registered as the command without
+`node` in front — either form above fixes it.
 
 Environment: `ARTIFACTS_API_URL` (default `http://localhost:8080`), `ARTIFACTS_DEV_OID` (default
 `local-dev`, becomes the publisher identity), `ARTIFACTS_TOKEN` (any value locally).

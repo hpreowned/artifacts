@@ -501,3 +501,6 @@ intake API. Install the skill (`cp -r skill/publish-to-aks ~/.claude/skills/`), 
 (`scripts/run-all.sh`), and publish from a Claude Code session. This validates skill triggering, staging,
 preflight, the tool round-trip and state reporting without Entra, APIM, Cowork or the cluster — do it
 before I1–I5, so connector work starts against a skill already known to behave. See `mcp-local/README.md`.
+
+The judgment call worth watching is the dev-proxy trap: `tests/fixtures/react-express-app/README.md` is a
+React+Express prototype built for exactly that. Run it before calling the local loop complete.

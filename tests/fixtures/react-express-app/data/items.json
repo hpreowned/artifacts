@@ -1,0 +1,5 @@
+[
+  { "sku": "A-100", "name": "Laptop stand", "qty": 12 },
+  { "sku": "B-220", "name": "USB-C dock", "qty": 7 },
+  { "sku": "C-310", "name": "Monitor arm", "qty": 3 }
+]

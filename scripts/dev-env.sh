@@ -22,3 +22,6 @@ export ARTIFACT_SCHEME=http
 export HOST=127.0.0.1               # dev servers bind loopback only; unset in cluster manifests (pods must bind all interfaces)
 export INTAKE_INTERNAL_URL=${INTAKE_INTERNAL_URL:-http://localhost:8080}
 export RUNTIME_MANIFEST="$ROOT/tests/runtime-manifest.python-1.json"
+# Node tier, local only: lockfiles on a laptop resolve against the public registry, not the JFrog mirror
+# the platform requires (JS-002). Production never sets this; the chart pins the JFrog host.
+export NPM_REGISTRY_HOST="${NPM_REGISTRY_HOST:-registry.npmjs.org}"

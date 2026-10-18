@@ -1,4 +1,5 @@
 {
-  "state": "awaiting_approval",
-  "rules": []
+  "state": "live",
+  "rules": [],
+  "note": "Clean scan: D16 auto-approves server tiers; the fake pipeline plays deploying then live. No runtime runs locally."
 }

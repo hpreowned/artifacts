@@ -4,7 +4,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { FakeDefenderReader } from "../../scanner/src/defender.js";
 import { startGc } from "../../scanner/src/gc.js";
-import { FakePipelineTrigger, postAwaitingApproval } from "../../scanner/src/pipeline.js";
+import { FakePipelineTrigger, postFakeCallbacks } from "../../scanner/src/pipeline.js";
 import { workerOptions } from "../../scanner/src/select.js";
 import { startWorker } from "../../scanner/src/worker.js";
 import type { Config } from "./config.js";
@@ -35,7 +35,7 @@ export async function startLocalStack(cfg: Config, port: number = cfg.port): Pro
   const bound = (server.address() as AddressInfo).port;
   const baseUrl = `http://localhost:${bound}`;
   const defender = new FakeDefenderReader(cfg.worker.defenderFakeMalicious);
-  const pipeline = new FakePipelineTrigger(postAwaitingApproval(baseUrl, cfg.pipelineToken), `${baseUrl}/dev/approval`);
+  const pipeline = new FakePipelineTrigger(postFakeCallbacks(baseUrl, cfg.pipelineToken), `${baseUrl}/dev/approval`);
   const stopWorker = startWorker({ stores, defender, pipeline, opts: workerOptions(cfg) });
   const stopGc = startGc(stores, cfg.worker.gcIntervalSeconds);
   const stopSweeper = startExpirySweeper(stores.jobs, cfg.uploadExpirySweepSeconds);

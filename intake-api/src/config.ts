@@ -23,6 +23,8 @@ export interface WorkerConfig {
   ado: { org: string | undefined; project: string | undefined; pipelineId: string | undefined; nodePipelineId: string | undefined };
   /** Where the fake pipeline posts its awaiting_approval callback. */
   intakeInternalUrl: string;
+  /** D16 approval policy: `policy` | `always-human` | `always-auto` (env APPROVAL_MODE). */
+  approvalPolicy: "policy" | "always-human" | "always-auto";
 }
 
 export interface Config {
@@ -107,6 +109,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       pipelineTrigger,
       ado,
       intakeInternalUrl: (env.INTAKE_INTERNAL_URL ?? `http://localhost:${port}`).replace(/\/+$/, ""),
+      approvalPolicy: approvalPolicy(env.APPROVAL_MODE),
     },
   };
 }
@@ -114,4 +117,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 export function int(value: string | undefined, fallback: number): number {
   const n = value === undefined ? NaN : Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function approvalPolicy(value: string | undefined): "policy" | "always-human" | "always-auto" {
+  if (value === undefined || value === "" || value === "policy") return "policy";
+  if (value === "always-human" || value === "always-auto") return value;
+  throw new Error(`APPROVAL_MODE must be policy, always-human or always-auto (got "${value}")`);
 }

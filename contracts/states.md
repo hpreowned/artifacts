@@ -9,7 +9,8 @@ One job per `beginPublish`. One artifact id per job. States and who moves them:
 | awaiting_upload | expired | intake-api | 10 min without finalize |
 | scanning | rejected | scanner worker | any `deny` finding (policy.ts) |
 | scanning | deploying | scanner worker | tier static, verdict pass |
-| scanning | awaiting_approval | Azure DevOps pipeline via /events | tier python, verdict pass, pipeline reached the approval check |
+| scanning | awaiting_approval | Azure DevOps pipeline via /events | tier python/node, verdict pass, approval policy decided `human` (a warning finding, D16): the run targets the environment with the approval check |
+| scanning | deploying | Azure DevOps pipeline via /events | tier python/node, verdict pass, approval policy decided `auto` (clean scan, D16): the run targets the environment without checks and deploys directly |
 | scanning | failed | scanner worker | internal error, Defender result `Error`, pipeline trigger failed |
 | scanning | failed | scanner worker | python job: `runUrl` set but no `/events` callback within `PIPELINE_TIMEOUT_HOURS` (default 24) |
 | awaiting_approval | deploying | pipeline via /events | approval granted |

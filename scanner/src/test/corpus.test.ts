@@ -36,7 +36,13 @@ for (const name of bundles) {
       assert.ok(job.findings.some((f) => f.rule === rule), `${name} should carry ${rule}; findings:\n  ${listed}`);
     }
     assert.ok(job.summary && job.summary.length > 20, "summary paragraph present");
-    if (expected.state === "live") {
+    if (expected.state === "live" && job.tier !== "static") {
+      // D16 auto path: the fake pipeline posted deploying then live; the bundle stays for the pipeline to fetch.
+      assert.equal(job.approval?.mode, "auto", JSON.stringify(job.approval));
+      assert.equal(job.runUrl, `http://localhost/fake-run/${job.jobId}`);
+      assert.ok(await h.stores.bundles.get(job.jobId), "server-tier bundle kept for the pipeline");
+      assert.ok(!job.findings.some((f) => f.severity === "deny"));
+    } else if (expected.state === "live") {
       assert.equal(job.url, `http://localhost:8082/view/${job.artifactId}`);
       assert.ok(existsSync(join(h.serveRoot, job.artifactId, "index.html")), "index.html copied to the serving store");
       assert.equal(await h.stores.bundles.get(job.jobId), undefined, "intake bundle dropped after publish");
@@ -47,6 +53,7 @@ for (const name of bundles) {
       assert.equal(await h.stores.bundles.get(job.jobId), undefined, "intake bundle dropped after rejection");
     }
     if (expected.state === "awaiting_approval") {
+      assert.equal(job.approval?.mode, "human", "awaiting_approval only on the human path (D16)");
       assert.equal(job.runUrl, `http://localhost/fake-run/${job.jobId}`);
       assert.ok(await h.stores.bundles.get(job.jobId), "python bundle kept for the pipeline");
     }

@@ -140,6 +140,12 @@
 parameters:
   - name: jobId
     type: string
+  # D16: the scanner decides who approves. `human` targets the environment with the approval check and posts
+  # awaiting_approval first; `auto` targets the environment without checks and goes straight to deploying.
+  - name: approvalMode
+    type: string
+    default: human
+    values: [auto, human]
 
 trigger: none
 pr: none
@@ -293,6 +299,7 @@ stages:
                 -d "{\"state\":\"awaiting_approval\",\"runUrl\":\"$(runUrl)\",\"message\":\"gitleaks clean; Sonar report on the run; waiting for artifacts-approvers\"}"
             displayName: Callback awaiting_approval
             name: callbackAwaitingApproval
+            condition: and(succeeded(), eq('${{ parameters.approvalMode }}', 'human'))
             env:
               PIPELINE_TOKEN: $(PIPELINE_TOKEN)
 
@@ -311,7 +318,10 @@ stages:
     condition: succeeded()
     jobs:
       - deployment: deploy
-        environment: artifacts-dynamic
+        ${{ if eq(parameters.approvalMode, 'auto') }}:
+          environment: artifacts-dynamic-auto
+        ${{ else }}:
+          environment: artifacts-dynamic
         variables:
           artifactId: $[ stageDependencies.Fetch.fetch.outputs['jobrecord.artifactId'] ]
           expiresAt: $[ stageDependencies.Fetch.fetch.outputs['jobrecord.expiresAt'] ]

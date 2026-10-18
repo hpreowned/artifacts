@@ -48,15 +48,15 @@ test("blob tag reader polls until the tag appears, times out, and maps read erro
 
 test("fake pipeline trigger returns a local run url and plays its callback after the caller's turn", async () => {
   const seen: string[] = [];
-  const t = new FakePipelineTrigger(async (jobId, runUrl) => {
-    seen.push(`${jobId}:${runUrl}`);
+  const t = new FakePipelineTrigger(async (jobId, runUrl, approval) => {
+    seen.push(`${jobId}:${runUrl}:${approval}`);
   });
-  const { runUrl } = await t.triggerDeploy("job_a", "python");
+  const { runUrl } = await t.triggerDeploy("job_a", "python", "human");
   assert.equal(runUrl, "http://localhost/fake-run/job_a");
   assert.deepEqual(seen, [], "deferred");
   await t.drain();
-  assert.deepEqual(seen, ["job_a:http://localhost/fake-run/job_a"]);
-  assert.deepEqual(t.triggered, [{ jobId: "job_a", runUrl, tier: "python" }]);
+  assert.deepEqual(seen, ["job_a:http://localhost/fake-run/job_a:human"]);
+  assert.deepEqual(t.triggered, [{ jobId: "job_a", runUrl, tier: "python", approval: "human" }]);
 });
 
 test("Azure DevOps trigger posts the run request with a bearer from the credential", async () => {
@@ -68,16 +68,16 @@ test("Azure DevOps trigger posts the run request with a bearer from the credenti
   const scopes: string[] = [];
   const credential = { getToken: async (scope: string) => (scopes.push(scope), { token: "t" }) };
   const t = new AzureDevOpsPipelineTrigger("o", "p", "12", "34", credential, fetchImpl);
-  const { runUrl } = await t.triggerDeploy("job_z", "node");
+  const { runUrl } = await t.triggerDeploy("job_z", "node", "human");
   assert.equal(runUrl, "https://dev.azure.com/o/p/_build/results?buildId=7");
   assert.deepEqual(scopes, [ADO_SCOPE]);
   assert.equal(calls[0]!.url, "https://dev.azure.com/o/p/_apis/pipelines/34/runs?api-version=7.1", "node tier routes to the node pipeline id");
   assert.equal(calls[0]!.init.method, "POST");
-  assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { templateParameters: { jobId: "job_z" } });
+  assert.deepEqual(JSON.parse(String(calls[0]!.init.body)), { templateParameters: { jobId: "job_z", approvalMode: "human" } });
   assert.equal((calls[0]!.init.headers as Record<string, string>).authorization, "Bearer t");
 
   const failing = new AzureDevOpsPipelineTrigger("o", "p", "12", "34", credential, (async () => new Response("nope", { status: 403 })) as typeof fetch);
-  await assert.rejects(() => failing.triggerDeploy("job_z", "python"), /403/);
+  await assert.rejects(() => failing.triggerDeploy("job_z", "python", "human"), /403/);
   const noToken = new AzureDevOpsPipelineTrigger("o", "p", "12", "34", { getToken: async () => null }, fetchImpl);
-  await assert.rejects(() => noToken.triggerDeploy("job_z", "python"), /access token/);
+  await assert.rejects(() => noToken.triggerDeploy("job_z", "python", "human"), /access token/);
 });

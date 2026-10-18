@@ -83,21 +83,24 @@ export interface Harness {
   cleanup(): Promise<void>;
 }
 
-/** Memory stores, fake Defender, a fake pipeline that plays `awaiting_approval` back into the job store. */
+/** Memory stores, fake Defender, a fake pipeline that plays the pipeline callbacks back into the job store. */
 export async function harness(overrides: Partial<WorkerOptions> = {}): Promise<Harness> {
   const workDir = await mkdtemp(join(tmpdir(), "scanner-test-"));
   const serveRoot = join(workDir, "serving");
   const queue = new MemoryScanQueue();
   const stores: Stores = { jobs: new MemoryJobStore(), bundles: new MemoryBundleStore(), serving: new LocalServingStore(serveRoot), queue };
   const defender = new FakeDefenderReader();
-  const pipeline = new FakePipelineTrigger(async (jobId, runUrl) => {
+  const pipeline = new FakePipelineTrigger(async (jobId, runUrl, approval) => {
     const job = await stores.jobs.get(jobId);
-    if (job && applyEvent(job, { state: "awaiting_approval", runUrl })) await stores.jobs.put(job);
+    if (!job) return;
+    // D16: the real pipeline posts awaiting_approval on the human path, deploying then live on the auto path.
+    const states = approval === "auto" ? (["deploying", "live"] as const) : (["awaiting_approval"] as const);
+    for (const state of states) if (applyEvent(job, { state, runUrl })) await stores.jobs.put(job);
   });
   const opts: WorkerOptions = {
     gitleaksBin: await fakeGitleaks(workDir), pythonBin: "python3", importsScript: IMPORTS_SCRIPT,
     runtimeManifestPath: RUNTIME_MANIFEST, shellOrigin: "http://localhost:8082", approverGroup: "artifacts-approvers",
-    npmRegistryHost: "jfrog.corp.com", ...overrides,
+    npmRegistryHost: "jfrog.corp.com", approvalPolicy: "policy", ...overrides,
   };
   return {
     stores, queue, defender, pipeline, serveRoot, workDir,

@@ -1,6 +1,6 @@
 ---
 name: publish-to-aks
-description: Publish a FINISHED artifact (static HTML/JS page, Python app, or self-contained Node prototype) to the company's internal AKS artifact host. Use only when the user is done building and says so — "publish this", "push it to the launchpad", "host this internally", "give me an internal link", "share this with the team". Do not use while an application is still being designed or built; the organization's own build skills own authoring, and this skill only aligns, verifies and publishes the result. Requires the "Artifacts" connector (tools beginPublish and getPublishStatus). Static artifacts go live in seconds behind corporate sign-in; Python and Node artifacts wait for a human approval.
+description: Publish a FINISHED artifact (static HTML/JS page, Python app, or self-contained Node prototype) to the company's internal AKS artifact host. Use only when the user is done building and says so — "publish this", "push it to the launchpad", "host this internally", "give me an internal link", "share this with the team". Do not use while an application is still being designed or built; the organization's own build skills own authoring, and this skill only aligns, verifies and publishes the result. Requires the "Artifacts" connector (tools beginPublish and getPublishStatus). Static artifacts go live in seconds behind corporate sign-in; Python and Node artifacts deploy automatically when the scan is clean and go to a human approver only when it raises a warning.
 ---
 
 # Publish to AKS
@@ -58,8 +58,9 @@ does not include those files).
    `RULE file:line message`, exit 1 when something would be rejected. Fix or escalate per rule 3 until
    it exits 0. `(warn)`/`(info)` lines do not block but are worth relaying.
 5. **Tell the user what alignment found** before publishing anything that needed more than packaging:
-   what was conformed, what was flagged, what a rebuild would need. Python and Node artifacts also wait
-   for a human approval after upload — say so up front.
+   what was conformed, what was flagged, what a rebuild would need. Python and Node artifacts deploy
+   automatically when the scan is clean; a warning finding sends them to a human approver first — say
+   which to expect once preflight has run (a `(warn)` line means a reviewer will look).
 
 ## Publishing
 
@@ -77,12 +78,15 @@ does not include those files).
 
 ## Interpreting each state
 
-- `awaiting_upload`, `scanning`, `deploying` — in progress. Keep polling.
+- `awaiting_upload`, `scanning`, `deploying` — in progress. Keep polling. For Python and Node, `deploying`
+  with `approval.mode: auto` means the scan was clean and no human is involved; the link follows shortly.
 - `rejected` — fix every finding in `findings` (each has `rule`, `file`, `line`, `message`) under the
   rule-3 consent rule, rerun preflight, then start again from step 6 with a new `beginPublish`. At most
   3 attempts; if the third is rejected, stop and show the user the remaining findings.
-- `awaiting_approval` — Python and Node only. Report `approval.runUrl` and `approval.group`, tell the
-  user they will get the URL once a human approves, and stop. Never try to approve anything yourself.
+- `awaiting_approval` — Python and Node only, and only when the scan raised a warning: `approval.reasons`
+  says why a reviewer is looking. Tell the user in plain words what was flagged and that the platform team
+  will review it (usually within a day), that they need do nothing, and that the link follows on approval.
+  Then stop. Never try to approve anything yourself. Offer the job id and run link only if they ask.
 - `live` — report `url` (internal, behind corporate sign-in) and `expiresAt`. Done.
 - `failed` — a platform problem, not the artifact. Report `summary` and stop; resubmit only if the
   message asks for it (for example a timed-out malware scan, rule MAL-002).
@@ -106,6 +110,7 @@ does not include those files).
 
 ## Reporting to the user
 
-Keep it short: the state, the link or the approval run, the expiry, what alignment changed, and any
-findings you could not fix. Say "internal link, requires corporate sign-in" so nobody pastes it to a
-customer.
+Write for a business user, not an engineer: what happened, whether they must do anything, when they get
+the link. The link, the expiry, what alignment changed, anything you could not fix — in sentences, not
+rule ids (translate `JS-005` into "the app tries to call an outside service"). Job ids and run links on
+request only. Say "internal link, requires corporate sign-in" so nobody pastes it to a customer.

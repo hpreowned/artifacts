@@ -27,6 +27,8 @@ export async function postPublishEvent(req: IncomingMessage, res: ServerResponse
   const job = await deps.stores.jobs.get(jobId);
   if (!job) fail(404, "unknown job");
   if (!applyEvent(job, event, deps.now())) fail(409, `illegal transition ${job.state} → ${event.state}`);
+  // Static artifacts get their URL from the worker; pipeline-deployed ones get it here, the moment they go live.
+  if (job.state === "live" && !job.url) job.url = `${deps.cfg.shellOrigin}/view/${job.artifactId}`;
   await deps.stores.jobs.put(job);
   sendEmpty(res, 204);
 }

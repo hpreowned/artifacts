@@ -298,6 +298,8 @@ you're actually executing; this section is the quick-reference index.
 
 ### I8 — Azure DevOps: VNet agent pool, Environment `artifacts-dynamic` with approval, Queue-builds permission
 
+**D16 addendum (2026-10-18):** create **two** Environments: `artifacts-dynamic` **with** the approval check (the `human` path) and `artifacts-dynamic-auto` **without any check** (the `auto` path, clean scans). Both deploy to the same namespace; the pipelines pick the Environment from the `approvalMode` run parameter the scanner passes. Set `APPROVAL_MODE=always-human` on the scanner for the first integration days if the org wants to watch every deploy once, then unset it (policy).
+
 - **Owner:** you / DevOps admin
 - **Runbook steps:** `docs/M2-RUNBOOK.md` Phase G, step 20 (VNet pool half — blocks M2); Environment approval
   and Queue-builds halves are M5-only, exercised by `DESIGN.md` §8 Phase 2's gate

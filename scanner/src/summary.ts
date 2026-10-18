@@ -1,5 +1,6 @@
 // The one-paragraph human summary on every job, written for Cowork to relay to the author verbatim.
 import type { Finding, JobRecord } from "../../intake-api/src/job.js";
+import type { ApprovalDecision } from "./approval-policy.js";
 
 export type SummaryKind = "live" | "rejected" | "failed" | "triggering" | "triggered";
 
@@ -7,6 +8,7 @@ export interface SummaryExtra {
   reason?: string;
   runUrl?: string;
   group?: string;
+  approval?: ApprovalDecision;
 }
 
 const MAX_LISTED = 5;
@@ -24,8 +26,14 @@ export function summarize(job: JobRecord, kind: SummaryKind, extra: SummaryExtra
       return `"${name}" could not be scanned: ${extra.reason ?? "internal error"}. Nothing was published. Publish again; if it keeps failing, contact the platform team.${advisories(job.findings)}`;
     case "triggering":
       return `"${name}" passed scanning. Triggering the python deploy pipeline.${advisories(job.findings)}`;
-    case "triggered":
-      return `"${name}" passed scanning. The deploy pipeline is running at ${extra.runUrl ?? "(run url pending)"}; a member of ${extra.group ?? "the approver group"} must approve it in Azure DevOps before the app goes live.${advisories(job.findings)}`;
+    case "triggered": {
+      const run = extra.runUrl ?? "(run url pending)";
+      if (extra.approval?.mode === "auto") {
+        return `"${name}" passed scanning cleanly. The deploy pipeline is running at ${run} and no approval is needed; the app goes live when the rollout is healthy.${advisories(job.findings)}`;
+      }
+      const why = extra.approval?.reasons.length ? ` It was sent for review because: ${extra.approval.reasons.join("; ")}.` : "";
+      return `"${name}" passed scanning. The deploy pipeline is running at ${run}; a member of ${extra.group ?? "the approver group"} must approve it in Azure DevOps before the app goes live.${why}${advisories(job.findings)}`;
+    }
   }
 }
 

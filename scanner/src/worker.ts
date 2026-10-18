@@ -10,6 +10,7 @@ import { extractBundle, type Extracted } from "./extract.js";
 import { intakeChecks } from "./intake-checks.js";
 import { jsChecks } from "./js-checks.js";
 import type { PipelineTrigger } from "./pipeline.js";
+import { decideApproval, type ApprovalPolicy } from "./approval-policy.js";
 import { severityOf, verdict } from "./policy.js";
 import { pythonChecks } from "./python-stage.js";
 import { secretsScan } from "./secrets.js";
@@ -25,6 +26,8 @@ export interface WorkerOptions {
   approverGroup: string;
   /** JS-002: the JFrog npm mirror host every lockfile `resolved` URL must match. */
   npmRegistryHost: string;
+  /** D16: `policy` (clean scan → auto, warning → human), or forced either way via APPROVAL_MODE. */
+  approvalPolicy: ApprovalPolicy;
 }
 
 export interface WorkerDeps {
@@ -159,12 +162,16 @@ async function settle(job: JobRecord, ctx: ScanContext, deps: WorkerDeps): Promi
   // (contracts/states.md says prototype follows the python path verbatim). Same trigger call either way — which
   // Azure DevOps pipeline it reaches (artifact-python-deploy vs artifact-node-deploy) is a config concern for
   // whoever wires the real PipelineTrigger, not the worker (see the final report).
+  // D16: decide who approves before the pipeline runs, so the run targets the right Azure DevOps environment.
+  const approval = decideApproval(findings, deps.opts.approvalPolicy);
+  job.approval = approval;
   await save("scanning", summarize(job, "triggering"));
   try {
-    const { runUrl } = await deps.pipeline.triggerDeploy(job.jobId, job.tier === "node" ? "node" : "python");
+    const { runUrl } = await deps.pipeline.triggerDeploy(job.jobId, job.tier === "node" ? "node" : "python", approval.mode);
     const fresh = (await jobs.get(job.jobId)) ?? job;
     fresh.runUrl = runUrl;
-    fresh.summary = summarize(fresh, "triggered", { runUrl, group: deps.opts.approverGroup });
+    fresh.approval = approval;
+    fresh.summary = summarize(fresh, "triggered", { runUrl, group: deps.opts.approverGroup, approval });
     fresh.updatedAt = now().toISOString();
     await jobs.put(fresh);
   } catch (err) {

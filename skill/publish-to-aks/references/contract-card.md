@@ -31,7 +31,8 @@ accounts; nothing is public.
 - One `app.py`; only the curated runtime's libraries are importable (see `python-1-libraries.md`); no
   `requirements.txt` — dependencies are the platform's, not the artifact's.
 - No subprocess, sockets, `ctypes`, `pickle`, `eval`/`exec`; file writes only under `/tmp`; no outbound
-  HTTP (all egress is denied at run time). Runs only after a human approval.
+  HTTP (all egress is denied at run time). A clean scan deploys automatically; a warning finding sends it to a
+  human approver first (D16).
 - **Consider the static export first**: if viewing the app never makes the server answer (charts over fixed
   data, reports, tables), run it once at publish time and ship the output — Plotly/Altair HTML stays fully
   interactive client-side — on the static tier: live in seconds, no approval. Streamlit-style widget apps
@@ -46,7 +47,8 @@ accounts; nothing is public.
 - All data as files (for example `data/db.json`); every writable path is ephemeral — nothing written at
   run time survives a restart or the TTL. No outbound calls of any kind (egress including DNS is denied);
   no `child_process`, `vm`, `worker_threads`, or raw sockets in the app's own server files.
-- Runs only after a human approval; the viewer shows a persistent "Prototype environment. Data is not
+- A clean scan deploys automatically; a warning finding (for example an outbound call in server code) sends it
+  to a human approver first (D16). The viewer shows a persistent "Prototype environment. Data is not
   retained." banner. Not a permanent home: approved keepers graduate to normal service hosting.
 
 Manifest schema: `manifest-schema.json` next to this card. Scanner rule ids: the platform's

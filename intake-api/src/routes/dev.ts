@@ -20,6 +20,7 @@ export async function devApprovalPage(_req: IncomingMessage, res: ServerResponse
 <p>In production this link is the Azure DevOps run waiting on the <strong>artifacts-approvers</strong> check.
 The local stack has no Azure DevOps, so nothing happens here by itself.</p>
 <p>Job <code>${esc(jobId)}</code> · tier <code>${esc(job.tier)}</code> · state <span class="s">${esc(job.state)}</span></p>
+${job.approval ? `<p>Approval policy (D16): <strong>${job.approval.mode === "auto" ? "auto — the scan was clean, no human in the loop; the fake pipeline already played deploying → live" : "human — a warning sent this to the approver group"}</strong>${job.approval.reasons.length ? `<br>${job.approval.reasons.map(esc).join("<br>")}` : ""}</p>` : ""}
 <h2>Play the pipeline's callbacks by hand</h2>
 <p>The token is <code>PIPELINE_TOKEN</code> in <code>.local/dev.env</code> (<code>source scripts/dev-env.sh</code> exports it).</p>
 <p>Approve, then report the rollout healthy:</p>

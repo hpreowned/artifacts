@@ -70,6 +70,12 @@
 parameters:
   - name: jobId
     type: string
+  # D16: the scanner decides who approves. `human` targets the environment with the approval check and posts
+  # awaiting_approval first; `auto` targets the environment without checks and goes straight to deploying.
+  - name: approvalMode
+    type: string
+    default: human
+    values: [auto, human]
 
 trigger: none
 pr: none
@@ -290,6 +296,7 @@ stages:
                 -d "{\"state\":\"awaiting_approval\",\"runUrl\":\"$(runUrl)\",\"message\":\"image built and pushed; npm audit report on the run (advisory); waiting for artifacts-approvers\"}"
             displayName: Callback awaiting_approval
             name: callbackAwaitingApproval
+            condition: and(succeeded(), eq('${{ parameters.approvalMode }}', 'human'))
             env:
               PIPELINE_TOKEN: $(PIPELINE_TOKEN)
 
@@ -312,7 +319,10 @@ stages:
       digest: $[ stageDependencies.Build.build.outputs['dockerBuild.digest'] ]
     jobs:
       - deployment: deploy
-        environment: artifacts-dynamic
+        ${{ if eq(parameters.approvalMode, 'auto') }}:
+          environment: artifacts-dynamic-auto
+        ${{ else }}:
+          environment: artifacts-dynamic
         strategy:
           runOnce:
             deploy:

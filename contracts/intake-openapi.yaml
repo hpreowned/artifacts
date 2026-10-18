@@ -235,10 +235,15 @@ components:
         findings: { type: array, items: { $ref: '#/components/schemas/Finding' } }
         approval:
           type: object
-          description: Present when awaiting_approval
+          description: >-
+            Server tiers only, present once the scanner has decided who approves (D16). `mode: auto` means the
+            scan was clean and the pipeline deploys without a human; `mode: human` means a warning sent it to
+            the approval check, and `reasons` says why in the scanner's words. `runUrl` once the run exists.
           properties:
             group: { type: string, example: artifacts-approvers }
             runUrl: { type: string, format: uri }
+            mode: { type: string, enum: [auto, human] }
+            reasons: { type: array, items: { type: string } }
         summary: { type: string, description: 'One paragraph for humans, suitable for Cowork to relay' }
     EventIn:
       type: object

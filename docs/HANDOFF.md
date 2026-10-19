@@ -495,6 +495,16 @@ Added on 2026-10-15, travels from snapshot-2 on. The launchpad's three runtimes 
 - Charts: `charts/artifact-node` (validated offline by `charts/tests/node-conformance.sh`, wired into `deploy/validate.sh`). GC already covers `node-*` releases.
 - M8's gate (STATUS.md) runs on the cluster exactly like M5's, with `tests/corpus/node-ok` as the acceptance bundle.
 
+## Addendum: the dev cluster, before any Azure resource exists
+
+`docs/DEV-AKS-DEMO.md` runs the platform on the dev AKS cluster with no new Azure resources: one pod from
+`charts/artifacts-dev-allinone` (disk-backed, dev auth, HTTP on wildcard-IP hostnames) attached to the
+existing Gateway API ingress, images built on a laptop with `scripts/build-platform-images.sh`, server-tier
+pipelines played by hand with `scripts/play-node-pipeline.sh` (same Dockerfile, chart and callbacks; the
+pipelines read their inputs from intake's new `/record` and `/bundle` endpoints, so they could too). Nothing
+cluster-scoped beyond two namespaces. The Terraform request for the real backends (Phase 2) is what turns
+this into M2 proper.
+
 ## Addendum: the node runtime's first real run (before the cluster)
 
 `scripts/run-node-bundle.sh <bundle>` is a platform-team tool: it builds the real `node-runtime/Dockerfile`

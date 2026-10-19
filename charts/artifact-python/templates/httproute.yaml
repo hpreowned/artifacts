@@ -11,7 +11,9 @@ spec:
   parentRefs:
     - name: {{ .Values.gateway.name }}
       namespace: {{ .Values.gateway.namespace }}
+      {{- if .Values.gateway.sectionName }}
       sectionName: {{ .Values.gateway.sectionName }}
+      {{- end }}
   hostnames:
     - {{ printf "%s.%s" .Values.artifactId .Values.domain.artifactDomain | quote }}
   rules:

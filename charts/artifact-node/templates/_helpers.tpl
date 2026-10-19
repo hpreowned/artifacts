@@ -14,8 +14,9 @@ runtime image.
 {{- if not .Values.expiresAt -}}
 {{- fail "expiresAt is required" -}}
 {{- end -}}
-{{- if not (regexMatch (printf "^jfrog\\.corp\\.com/artifacts/node-%s@sha256:[a-f0-9]{64}$" .Values.artifactId) .Values.image) -}}
-{{- fail (printf "image %q must be jfrog.corp.com/artifacts/node-%s@sha256:<64 hex>" .Values.image .Values.artifactId) -}}
+{{- $reg := regexReplaceAll "([.+?^$()\\[\\]|])" .Values.imageRegistry "\\${1}" -}}
+{{- if not (regexMatch (printf "^%s/node-%s@sha256:[a-f0-9]{64}$" $reg .Values.artifactId) .Values.image) -}}
+{{- fail (printf "image %q must be %s/node-%s@sha256:<64 hex>" .Values.image .Values.imageRegistry .Values.artifactId) -}}
 {{- end -}}
 {{- if not .Values.writablePaths -}}
 {{- fail "writablePaths must not be empty" -}}

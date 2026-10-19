@@ -23,10 +23,13 @@ domain:
   # <artifactId>.<artifactDomain> is the HTTPRoute hostname.
   artifactDomain: corp-artifacts.net
 
+# Registry prefix the image must come from. Production: the JFrog path; the dev cluster passes its own.
+imageRegistry: jfrog.corp.com/artifacts
+
 gateway:
   name: artifacts-internal
   namespace: artifacts-system
-  sectionName: content
+  sectionName: content   # listener name; empty attaches to whichever listener accepts the hostname
 
 service:
   port: 8080

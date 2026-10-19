@@ -173,3 +173,20 @@ expect_fail --set artifactId="$artifact_id" --set expiresAt=2026-11-01T00:00:00Z
 expect_fail --set artifactId="$artifact_id" --set expiresAt=2026-11-01T00:00:00Z --set image="$image" --set 'writablePaths[0]=relative/path'
 
 echo "node-conformance: all checks passed"
+
+# --- dev-cluster shape: a different registry prefix and an empty listener name must render (and the
+#     default must still refuse a foreign registry) ---
+out_dev="$(mktemp)"
+render "$out_dev" --set imageRegistry=myacr.azurecr.io/artifacts --set image="myacr.azurecr.io/artifacts/node-$artifact_id@sha256:$digest" --set gateway.sectionName=""
+python3 - "$out_dev" <<'PY'
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d]
+route = [d for d in docs if d["kind"] == "HTTPRoute"][0]
+assert "sectionName" not in route["spec"]["parentRefs"][0], "empty sectionName must be omitted, not rendered empty"
+dep = [d for d in docs if d["kind"] == "Deployment"][0]
+assert dep["spec"]["template"]["spec"]["containers"][0]["image"].startswith("myacr.azurecr.io/artifacts/node-"), "custom registry accepted"
+print("conformance ok  dev-cluster registry + no sectionName")
+PY
+expect_fail --set artifactId="$artifact_id" --set expiresAt=2026-11-01T00:00:00Z --set image="myacr.azurecr.io/artifacts/node-$artifact_id@sha256:$digest" --set jobId=job-abc-001
+echo "conformance ok  default registry still refuses a foreign one"
+rm -f "$out_dev"

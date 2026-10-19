@@ -13,8 +13,9 @@ and the same `streamlit|fastapi` set render.sh used to accept.
 {{- if not .Values.expiresAt -}}
 {{- fail "expiresAt is required" -}}
 {{- end -}}
-{{- if not (regexMatch "^jfrog\\.corp\\.com/artifacts/python-runtime@sha256:[a-f0-9]{64}$" .Values.image) -}}
-{{- fail (printf "image %q must be jfrog.corp.com/artifacts/python-runtime@sha256:<64 hex>" .Values.image) -}}
+{{- $reg := regexReplaceAll "([.+?^$()\\[\\]|])" .Values.imageRegistry "\\${1}" -}}
+{{- if not (regexMatch (printf "^%s/python-runtime@sha256:[a-f0-9]{64}$" $reg) .Values.image) -}}
+{{- fail (printf "image %q must be %s/python-runtime@sha256:<64 hex>" .Values.image .Values.imageRegistry) -}}
 {{- end -}}
 {{- end -}}
 

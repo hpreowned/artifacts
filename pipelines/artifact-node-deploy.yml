@@ -19,6 +19,8 @@
 #
 # Variable group artifacts-platform (same group the Python pipeline uses):
 #   PIPELINE_TOKEN        secret, Key Vault secret pipeline-token
+#   INTAKE_FETCH          "1" on the dev cluster: the Fetch stage reads the job record and bundle from intake
+#                         (GET /record, /bundle with the pipeline token) instead of Blob. Unset in production.
 #   INTAKE_EVENTS_URL     http://intake.artifacts.internal:8080   (base only; every callback below posts to
 #                         <url>/v1/publish/<jobId>/events, the exact contracts/intake-openapi.yaml path)
 #   STORAGE_ACCOUNT       <storage-account>
@@ -101,14 +103,23 @@ stages:
           - task: AzureCLI@2
             displayName: Download job record (jobs/<jobId>.json)
             name: jobrecord
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+              INTAKE_FETCH: $(INTAKE_FETCH)      # unset in production → literal, not "1" → Blob path
             inputs:
               azureSubscription: <storage-connection>
               scriptType: bash
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                az storage blob download --auth-mode login --account-name "$(STORAGE_ACCOUNT)" \
-                  -c jobs -n "${{ parameters.jobId }}.json" -f job.json
+                # INTAKE_FETCH=1 (dev cluster, no Blob): intake serves the record itself (GET /record, pipeline token).
+                if [ "${INTAKE_FETCH:-}" = "1" ]; then
+                  curl -fsS -H "Authorization: Bearer ${PIPELINE_TOKEN}" \
+                    "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/record" -o job.json
+                else
+                  az storage blob download --auth-mode login --account-name "$(STORAGE_ACCOUNT)" \
+                    -c jobs -n "${{ parameters.jobId }}.json" -f job.json
+                fi
                 artifactId="$(jq -r '.artifactId' job.json)"
                 # Same reformat as artifact-python-deploy.yml: job.ts writes Date.toISOString() (fractional
                 # seconds); the chart's expiresAt label form wants whole-second RFC 3339.
@@ -131,14 +142,22 @@ stages:
           - task: AzureCLI@2
             displayName: Download bundle from intake
             name: download
+            env:
+              PIPELINE_TOKEN: $(PIPELINE_TOKEN)
+              INTAKE_FETCH: $(INTAKE_FETCH)      # unset in production → literal, not "1" → Blob path
             inputs:
               azureSubscription: <storage-connection>
               scriptType: bash
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                az storage blob download --auth-mode login --account-name "$(STORAGE_ACCOUNT)" \
-                  -c intake -n "${{ parameters.jobId }}.zip" -f bundle.zip
+                if [ "${INTAKE_FETCH:-}" = "1" ]; then
+                  curl -fsS -H "Authorization: Bearer ${PIPELINE_TOKEN}" \
+                    "$(INTAKE_EVENTS_URL)/v1/publish/${{ parameters.jobId }}/bundle" -o bundle.zip
+                else
+                  az storage blob download --auth-mode login --account-name "$(STORAGE_ACCOUNT)" \
+                    -c intake -n "${{ parameters.jobId }}.zip" -f bundle.zip
+                fi
                 mkdir -p bundle && unzip -q bundle.zip -d bundle
                 ls -la bundle
 

@@ -502,8 +502,10 @@ Added on 2026-10-15, travels from snapshot-2 on. The launchpad's three runtimes 
 existing Gateway API ingress, images built on a laptop with `scripts/build-platform-images.sh`, server-tier
 pipelines played by hand with `scripts/play-node-pipeline.sh` (same Dockerfile, chart and callbacks; the
 pipelines read their inputs from intake's new `/record` and `/bundle` endpoints, so they could too). Nothing
-cluster-scoped beyond two namespaces. The Terraform request for the real backends (Phase 2) is what turns
-this into M2 proper.
+cluster-scoped beyond two namespaces. `pipelines/dev-allinone-deploy.yml` does the build and deploy from Azure
+DevOps instead of a laptop, and the artifact pipelines run against the dev cluster with `INTAKE_FETCH=1`
+(inputs from intake, not Blob), queued by hand with the job id. The Terraform request for the real backends
+(Phase 2) is what turns this into M2 proper.
 
 ## Addendum: the node runtime's first real run (before the cluster)
 

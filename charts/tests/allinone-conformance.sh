@@ -16,6 +16,9 @@ out="$(mktemp)"; out_section="$(mktemp)"; out_prod="$(mktemp)"
 helm template demo "$chart" "${base[@]}" > "$out"
 helm template demo "$chart" "${base[@]}" --set gateway.sectionName=https --set hosts.intake=intake.10-1-1-1.nip.io > "$out_section"
 out_nosection="$(mktemp)"; helm template demo "$chart" "${base[@]}" --set gateway.sectionName= > "$out_nosection"
+# secrets.create without all three values must refuse; with them, a Secret renders
+if helm template demo "$chart" "${base[@]}" --set secrets.create=true --set secrets.pipelineToken=a >/dev/null 2>&1; then echo "FAIL: secrets.create with missing values rendered"; exit 1; fi
+out_secret="$(mktemp)"; helm template demo "$chart" "${base[@]}" --set secrets.create=true --set secrets.pipelineToken=a --set secrets.internalSharedKey=b --set secrets.viewTokenKey=c > "$out_secret"
 # required values
 for missing in images.platform hosts.shell hosts.artifactDomain; do
   if helm template demo "$chart" "${base[@]}" --set "$missing=" >/dev/null 2>&1; then echo "FAIL: renders without $missing"; exit 1; fi
@@ -23,7 +26,7 @@ done
 if helm template demo "$chart" "${base[@]}" --set hosts.artifactDomain=shell.10-1-1-1.nip.io >/dev/null 2>&1; then echo "FAIL: shell and artifact hosts may not be equal"; exit 1; fi
 # production platform chart must carry no dev switches (it has its own required values; render with its test helper's args if any)
 if helm template prod "$root/charts/artifacts-platform" > "$out_prod" 2>/dev/null; then :; else helm template prod "$root/charts/artifacts-platform" --set domains.artifacts=x.test --set domains.shell=s.test > "$out_prod" 2>/dev/null || true; fi
-python3 - "$out" "$out_section" "$out_prod" "$out_nosection" <<'PY'
+python3 - "$out" "$out_section" "$out_prod" "$out_nosection" "$out_secret" <<'PY'
 import sys, yaml
 docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d]
 docs_s = [d for d in yaml.safe_load_all(open(sys.argv[2])) if d]
@@ -61,6 +64,9 @@ ok(any(m["mountPath"] == "/serving" and m.get("readOnly") for m in cs["static-ga
 senv = {e["name"]: e.get("value") for e in cs["viewer-shell"]["env"]}
 ok(senv.get("ARTIFACT_SCHEME") == "http" and senv.get("INTAKE_INTERNAL_URL") == "http://127.0.0.1:8080" and senv.get("DEV_AUTH") == "1", "shell dev config")
 ok(len(by(docs, "PersistentVolumeClaim")) == 1, "one PVC")
+ok(not by(docs, "Secret"), "no Secret rendered by default (existingSecret)")
+sec = [d for d in yaml.safe_load_all(open(sys.argv[5])) if d and d.get("kind") == "Secret"]
+ok(len(sec) == 1 and sec[0]["metadata"]["name"] == "artifacts-dev-secrets" and set(sec[0]["stringData"]) == {"PIPELINE_TOKEN", "INTERNAL_SHARED_KEY", "VIEW_TOKEN_KEY"}, "secrets.create renders the Secret the containers reference")
 routes = {r["metadata"]["name"]: r for r in by(docs, "HTTPRoute")}
 ok(set(routes) == {"artifacts-dev-shell", "artifacts-dev-artifacts"}, f"two routes by default, got {sorted(routes)}")
 ok(routes["artifacts-dev-artifacts"]["spec"]["hostnames"] == ["*.a.10-1-1-1.sslip.io"], "artifact wildcard hostname")
@@ -92,4 +98,4 @@ if fails:
     print("FAIL:\n  " + "\n  ".join(fails)); sys.exit(1)
 print(f"allinone-conformance: {len(docs)} documents, all assertions passed")
 PY
-rm -f "$out" "$out_section" "$out_prod" "$out_nosection"
+rm -f "$out" "$out_section" "$out_prod" "$out_nosection" "$out_secret"

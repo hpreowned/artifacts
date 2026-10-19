@@ -1,0 +1,110 @@
+# Dev-cluster demo (docs/DEV-AKS-DEMO.md): build the four platform images and deploy charts/artifacts-dev-allinone
+# from Azure DevOps instead of a laptop. Same Build stage as platform-deploy.yml — real Dockerfiles, JFrog
+# base images (no build-argument overrides needed on the VNet pool) — then one HelmDeploy of the dev chart.
+#
+# DEV ONLY. The chart it deploys runs DEV_AUTH=1 over HTTP with disk-backed stores; never point this at a
+# cluster that will carry charts/artifacts-platform (both own artifacts-dynamic).
+#
+# Variable group `artifacts-dev` (Pipelines → Library):
+#   DEV_SHELL_HOST          shell.10.142.65.220.nip.io          (hosts.shell)
+#   DEV_ARTIFACT_DOMAIN     a.10-142-65-220.sslip.io            (hosts.artifactDomain; a different registrable domain)
+#   DEV_INTAKE_HOST         intake.10.142.65.220.nip.io         (hosts.intake: intake reachable by hostname, so the
+#                                                               artifact pipelines and the laptop need no port-forward)
+#   DEV_GATEWAY_NAME        ingress-gateway        DEV_GATEWAY_NAMESPACE  istio-ingress     DEV_GATEWAY_SECTION  http
+#   DEV_PIPELINE_TOKEN, DEV_INTERNAL_SHARED_KEY, DEV_VIEW_TOKEN_KEY   (secret variables; base64url, ≥32 bytes decoded;
+#                                                               no commas — HelmDeploy's overrideValues is comma-separated)
+#   GITLEAKS_VERSION, GITLEAKS_SHA256                           (as platform-deploy.yml)
+# Then set, in the artifact pipelines' variable group `artifacts-platform`, for the dev cluster:
+#   INTAKE_FETCH=1  INTAKE_EVENTS_URL=http://<DEV_INTAKE_HOST>  PIPELINE_TOKEN=<DEV_PIPELINE_TOKEN>
+# and queue artifact-node-deploy / artifact-python-deploy by hand with the jobId and approvalMode the dev
+# approval page shows (the scanner runs PIPELINE_TRIGGER=manual here: it has no identity to queue runs yet).
+
+parameters:
+  - name: tag
+    type: string
+    default: dev-$(Build.BuildId)
+
+trigger: none
+pr: none
+
+pool:
+  name: <your-vnet-pool>
+
+variables:
+  - group: artifacts-dev
+  - name: registry
+    value: jfrog.corp.com/artifacts
+  - name: tag
+    value: ${{ parameters.tag }}
+
+stages:
+  - stage: Build
+    jobs:
+      - job: images
+        displayName: Build and push
+        strategy:
+          matrix:
+            intake-api:
+              name: intake-api
+              context: '.'
+              buildArgs: ''
+            scanner:
+              name: scanner
+              context: '.'
+              buildArgs: '--build-arg GITLEAKS_VERSION=$(GITLEAKS_VERSION) --build-arg GITLEAKS_SHA256=$(GITLEAKS_SHA256)'
+            static-gateway:
+              name: static-gateway
+              context: 'static-gateway/'
+              buildArgs: ''
+            viewer-shell:
+              name: viewer-shell
+              context: 'viewer-shell/'
+              buildArgs: ''
+        steps:
+          - checkout: self
+          - script: |
+              set -euo pipefail
+              docker build --pull $(buildArgs) -f "$(name)/Dockerfile" -t "$(registry)/$(name):$(tag)" "$(context)"
+              docker push "$(registry)/$(name):$(tag)"
+              docker image inspect --format '{{index .RepoDigests 0}}' "$(registry)/$(name):$(tag)"
+            displayName: docker build and push $(name)
+
+  - stage: Deploy
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: deploy
+        displayName: helm upgrade --install artifacts-dev
+        environment: artifacts-dev          # no approval check: a dev-only environment
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: HelmDeploy@1
+                  displayName: helm upgrade --install artifacts-dev (charts/artifacts-dev-allinone)
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    namespace: artifacts-dev
+                    command: upgrade
+                    chartType: FilePath
+                    chartPath: charts/artifacts-dev-allinone
+                    releaseName: artifacts-dev
+                    install: true
+                    overrideValues: >-
+                      images.platform=$(registry)/scanner:$(tag),images.staticGateway=$(registry)/static-gateway:$(tag),images.viewerShell=$(registry)/viewer-shell:$(tag),hosts.shell=$(DEV_SHELL_HOST),hosts.artifactDomain=$(DEV_ARTIFACT_DOMAIN),hosts.intake=$(DEV_INTAKE_HOST),publicBaseUrl=http://$(DEV_INTAKE_HOST),gateway.name=$(DEV_GATEWAY_NAME),gateway.namespace=$(DEV_GATEWAY_NAMESPACE),gateway.sectionName=$(DEV_GATEWAY_SECTION),secrets.create=true,secrets.pipelineToken=$(DEV_PIPELINE_TOKEN),secrets.internalSharedKey=$(DEV_INTERNAL_SHARED_KEY),secrets.viewTokenKey=$(DEV_VIEW_TOKEN_KEY)
+                    arguments: --create-namespace --wait --timeout 5m
+                - task: Kubernetes@1
+                  displayName: rollout status artifacts-dev
+                  inputs:
+                    connectionType: Kubernetes Service Connection
+                    kubernetesServiceEndpoint: <aks-connection>
+                    namespace: artifacts-dev
+                    command: rollout
+                    arguments: status deployment/artifacts-dev --timeout=180s
+                - script: |
+                    echo "Shell:    http://$(DEV_SHELL_HOST)/view/<artifactId>"
+                    echo "Intake:   http://$(DEV_INTAKE_HOST)   (ARTIFACTS_API_URL for mcp-local; uploadUrl is built from it)"
+                    echo "Approval: http://$(DEV_INTAKE_HOST)/dev/approval/<jobId>"
+                  displayName: Where things are

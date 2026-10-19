@@ -27,8 +27,15 @@ gateway:
   routeNamespaceLabels:
     ingress-access: "true"
 
-# Created out of band (kubectl create secret generic ...): PIPELINE_TOKEN, INTERNAL_SHARED_KEY, VIEW_TOKEN_KEY.
+# The three platform secrets. Either create the Secret out of band (kubectl create secret generic ... with keys
+# PIPELINE_TOKEN, INTERNAL_SHARED_KEY, VIEW_TOKEN_KEY) and leave secrets.create false, or let the chart create
+# it from values — meant for pipelines/dev-allinone-deploy.yml, which passes Azure DevOps secret variables.
 existingSecret: artifacts-dev-secrets
+secrets:
+  create: false
+  pipelineToken: ""
+  internalSharedKey: ""
+  viewTokenKey: ""      # base64 of at least 32 bytes (the gateway and intake decode it)
 
 storage:
   size: 5Gi

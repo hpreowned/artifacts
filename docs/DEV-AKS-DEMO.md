@@ -104,6 +104,30 @@ asks you to approve when the policy says a human must (D16), installs `charts/ar
 If the rollout never becomes healthy, the artifact server is probably bound to loopback (the contract
 requires all interfaces) — `kubectl -n artifacts-dynamic logs deploy/node-<artifactId>`.
 
+## Alternative to steps 1, 2 and 5: Azure DevOps instead of the laptop
+
+Since Azure DevOps already deploys to this cluster, nothing has to be built or pushed from a laptop:
+
+1. **Platform:** `pipelines/dev-allinone-deploy.yml` builds the four images on the VNet pool (JFrog base
+   images, no overrides) and deploys `charts/artifacts-dev-allinone` through the AKS service connection,
+   creating the Secret from the `artifacts-dev` variable group's secret variables. Set `DEV_INTAKE_HOST` so
+   intake is reachable by hostname — the pipelines and the laptop then need no port-forward, and
+   `ARTIFACTS_API_URL=http://<DEV_INTAKE_HOST>` is what `mcp-local` gets.
+2. **Artifacts:** the real `artifact-node-deploy.yml` / `artifact-python-deploy.yml` run against the dev
+   cluster with `INTAKE_FETCH=1` in their variable group: the Fetch stage reads the job record and bundle
+   from intake (`/record`, `/bundle`) instead of Blob. Queue a run by hand with the `jobId` and
+   `approvalMode` the dev approval page shows — the scanner runs `PIPELINE_TRIGGER=manual` here because it
+   has no Azure identity to queue runs with until workload identity exists:
+   ```sh
+   az pipelines run --name artifact-node-deploy --parameters jobId=<jobId> approvalMode=<auto|human>
+   ```
+   With `approvalMode=human` the run waits on the `artifacts-dynamic` Environment's approval check, so D16's
+   two Environments (`artifacts-dynamic` with the check, `artifacts-dynamic-auto` without) are exercised for
+   real. `scripts/play-node-pipeline.sh` remains the fallback when Azure DevOps is not available.
+
+What this buys over the laptop route: the images come from the registry the platform will use, the approval
+is the real Environment check, and the only manual act left is queuing the run with a job id.
+
 ## 6. Tear down
 
 ```sh

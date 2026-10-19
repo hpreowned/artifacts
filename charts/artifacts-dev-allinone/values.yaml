@@ -20,7 +20,12 @@ hosts:
 gateway:
   name: ingress-gateway
   namespace: istio-ingress
-  sectionName: ""       # a listener name; empty attaches to whichever listener accepts the hostname
+  sectionName: http     # the plain-HTTP listener; the HTTPS one terminates with the org's certificate, which
+                        # will not match wildcard-IP hostnames. Empty attaches to every listener that accepts the host.
+  # Labels the gateway's allowedRoutes selector requires on a namespace before it admits that namespace's
+  # routes (kubectl get gateway <name> -n <ns> -o yaml → listeners[].allowedRoutes.namespaces.selector).
+  routeNamespaceLabels:
+    ingress-access: "true"
 
 # Created out of band (kubectl create secret generic ...): PIPELINE_TOKEN, INTERNAL_SHARED_KEY, VIEW_TOKEN_KEY.
 existingSecret: artifacts-dev-secrets

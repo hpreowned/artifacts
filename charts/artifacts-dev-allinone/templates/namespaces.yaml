@@ -6,6 +6,9 @@ metadata:
   name: artifacts-dev
   labels:
     {{- include "allinone.labels" . | nindent 4 }}
+    {{- range $k, $val := .Values.gateway.routeNamespaceLabels }}
+    {{ $k }}: {{ $val | quote }}
+    {{- end }}
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
 ---
@@ -17,6 +20,9 @@ metadata:
   name: artifacts-dynamic
   labels:
     {{- include "allinone.labels" . | nindent 4 }}
+    {{- range $k, $val := .Values.gateway.routeNamespaceLabels }}
+    {{ $k }}: {{ $val | quote }}
+    {{- end }}
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
 ---

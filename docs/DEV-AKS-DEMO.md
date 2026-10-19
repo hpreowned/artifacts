@@ -27,10 +27,13 @@ nslookup x.<ip-with-dashes>.sslip.io; nslookup x.<ip-with-dots>.nip.io          
 kubectl get storageclass                                                        # a default class for the PVC
 ```
 
-The gateway's listeners must accept routes from other namespaces (`allowedRoutes.namespaces.from: All`, or a
-selector that matches `artifacts-dev` and `artifacts-dynamic`) and must have a listener whose hostname is
-empty or a wildcard covering yours. If they do not, ask the owner of the gateway for one HTTP listener with
-`hostname: "*.<ip>.sslip.io"` plus one for the shell host, or a wildcard listener; no change on our side.
+On the dev cluster (checked 2026-10-18): both listeners, `http` (80) and `https` (443, the org's certificate),
+admit routes from namespaces labeled `ingress-access: "true"` and pin no hostname. The chart labels its two
+namespaces accordingly (`gateway.routeNamespaceLabels`) and attaches to the `http` listener
+(`gateway.sectionName`); the artifact charts' routes live in `artifacts-dynamic`, which carries the same label.
+`sslip.io` resolves through the VPN resolver; check `nip.io` the same way for the shell host — if it does not
+resolve, put the shell on `sslip.io` too (e.g. `shell.10-142-65-220.sslip.io`) at the cost of the shell and
+the artifacts being same-site, which the viewer sandboxing tolerates but production never would.
 Ambient note: the artifact namespaces are deliberately *not* in the mesh, so the gateway reaches them over
 plain HTTP on 8080 and the default-deny policy's single allow rule is exact.
 
@@ -58,7 +61,7 @@ helm upgrade --install artifacts-dev charts/artifacts-dev-allinone \
   --set images.viewerShell=<registry-prefix>/viewer-shell:dev1 \
   --set hosts.shell=shell.<ip-with-dots>.nip.io \
   --set hosts.artifactDomain=a.<ip-with-dashes>.sslip.io \
-  --set gateway.name=ingress-gateway --set gateway.namespace=istio-ingress --set gateway.sectionName=<listener or empty>
+  --set gateway.name=ingress-gateway --set gateway.namespace=istio-ingress   # sectionName defaults to http
 kubectl -n artifacts-dev rollout status deploy/artifacts-dev
 ```
 

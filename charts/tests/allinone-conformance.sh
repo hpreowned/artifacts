@@ -14,7 +14,8 @@ base=(--set images.platform=r/scanner:t --set images.staticGateway=r/sg:t --set 
       --set hosts.shell=shell.10-1-1-1.nip.io --set hosts.artifactDomain=a.10-1-1-1.sslip.io)
 out="$(mktemp)"; out_section="$(mktemp)"; out_prod="$(mktemp)"
 helm template demo "$chart" "${base[@]}" > "$out"
-helm template demo "$chart" "${base[@]}" --set gateway.sectionName=http --set hosts.intake=intake.10-1-1-1.nip.io > "$out_section"
+helm template demo "$chart" "${base[@]}" --set gateway.sectionName=https --set hosts.intake=intake.10-1-1-1.nip.io > "$out_section"
+out_nosection="$(mktemp)"; helm template demo "$chart" "${base[@]}" --set gateway.sectionName= > "$out_nosection"
 # required values
 for missing in images.platform hosts.shell hosts.artifactDomain; do
   if helm template demo "$chart" "${base[@]}" --set "$missing=" >/dev/null 2>&1; then echo "FAIL: renders without $missing"; exit 1; fi
@@ -22,7 +23,7 @@ done
 if helm template demo "$chart" "${base[@]}" --set hosts.artifactDomain=shell.10-1-1-1.nip.io >/dev/null 2>&1; then echo "FAIL: shell and artifact hosts may not be equal"; exit 1; fi
 # production platform chart must carry no dev switches (it has its own required values; render with its test helper's args if any)
 if helm template prod "$root/charts/artifacts-platform" > "$out_prod" 2>/dev/null; then :; else helm template prod "$root/charts/artifacts-platform" --set domains.artifacts=x.test --set domains.shell=s.test > "$out_prod" 2>/dev/null || true; fi
-python3 - "$out" "$out_section" "$out_prod" <<'PY'
+python3 - "$out" "$out_section" "$out_prod" "$out_nosection" <<'PY'
 import sys, yaml
 docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d]
 docs_s = [d for d in yaml.safe_load_all(open(sys.argv[2])) if d]
@@ -64,13 +65,16 @@ routes = {r["metadata"]["name"]: r for r in by(docs, "HTTPRoute")}
 ok(set(routes) == {"artifacts-dev-shell", "artifacts-dev-artifacts"}, f"two routes by default, got {sorted(routes)}")
 ok(routes["artifacts-dev-artifacts"]["spec"]["hostnames"] == ["*.a.10-1-1-1.sslip.io"], "artifact wildcard hostname")
 pr = routes["artifacts-dev-shell"]["spec"]["parentRefs"][0]
-ok(pr["name"] == "ingress-gateway" and pr["namespace"] == "istio-ingress" and "sectionName" not in pr, "parentRef to the existing gateway, no sectionName when empty")
+ok(pr["name"] == "ingress-gateway" and pr["namespace"] == "istio-ingress" and pr.get("sectionName") == "http", "parentRef to the existing gateway on its plain-HTTP listener by default")
 routes_s = {r["metadata"]["name"]: r for r in by(docs_s, "HTTPRoute")}
 ok("artifacts-dev-intake" in routes_s, "intake route appears when hosts.intake is set")
-ok(routes_s["artifacts-dev-shell"]["spec"]["parentRefs"][0].get("sectionName") == "http", "sectionName present when set")
+ok(routes_s["artifacts-dev-shell"]["spec"]["parentRefs"][0].get("sectionName") == "https", "sectionName follows the value")
+nosec = [d for d in yaml.safe_load_all(open(sys.argv[4])) if d and d.get("kind") == "HTTPRoute"]
+ok(all("sectionName" not in r["spec"]["parentRefs"][0] for r in nosec), "empty sectionName is omitted, not rendered empty")
 nss = {n["metadata"]["name"]: n for n in by(docs, "Namespace")}
 for n in ("artifacts-dev", "artifacts-dynamic"):
     ok(nss[n]["metadata"]["labels"].get("pod-security.kubernetes.io/enforce") == "restricted", f"{n}: PSA restricted")
+    ok(nss[n]["metadata"]["labels"].get("ingress-access") == "true", f"{n}: carries the label the gateway's allowedRoutes selector requires")
 np = by(docs, "NetworkPolicy")[0]
 ok(np["metadata"]["namespace"] == "artifacts-dynamic" and np["spec"]["policyTypes"] == ["Ingress", "Egress"] and "egress" not in np["spec"], "artifacts-dynamic default-deny, no egress")
 frm = np["spec"]["ingress"][0]["from"][0]
@@ -88,4 +92,4 @@ if fails:
     print("FAIL:\n  " + "\n  ".join(fails)); sys.exit(1)
 print(f"allinone-conformance: {len(docs)} documents, all assertions passed")
 PY
-rm -f "$out" "$out_section" "$out_prod"
+rm -f "$out" "$out_section" "$out_prod" "$out_nosection"

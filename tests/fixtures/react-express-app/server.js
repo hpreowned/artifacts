@@ -15,4 +15,7 @@ const dist = join(here, "dist");
 if (existsSync(dist)) app.use(express.static(dist));
 
 const port = Number(process.env.PORT ?? 3001);
-app.listen(port, "127.0.0.1", () => console.log(`react-express-fixture on ${port}`));
+// All interfaces by default: in the pod the readiness probe arrives over the pod network, not loopback.
+// `npm run dev` sets HOST=127.0.0.1 so the laptop stays loopback-only.
+const host = process.env.HOST ?? "0.0.0.0";
+app.listen(port, host, () => console.log(`react-express-fixture on ${host}:${port}`));

@@ -41,7 +41,10 @@ accounts; nothing is public.
 
 ## Node prototype (`tier: node`, runtime `node-20`, entrypoint `package.json`)
 - A self-contained full-stack prototype: `package.json` with a `start` script serving client and API on
-  `$PORT`; `package-lock.json` resolved against the JFrog npm mirror. The pipeline installs dependencies
+  `$PORT` **on all interfaces** (`0.0.0.0`, which is what `app.listen(port)` does by default) — the pod's
+  readiness probe and the service reach the app over the pod network, so a server bound to `127.0.0.1` or
+  `localhost` never becomes healthy and the deploy fails; `package-lock.json` resolved against the JFrog npm
+  mirror. The pipeline installs dependencies
   with `npm ci --ignore-scripts` — no `node_modules/`, no `.env*`/`.npmrc`, no
   `preinstall`/`postinstall`/`prepare` scripts in the bundle.
 - All data as files (for example `data/db.json`); every writable path is ephemeral — nothing written at

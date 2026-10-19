@@ -564,7 +564,7 @@ The Environment `artifacts-dynamic` carries the approval check (Entra group `art
 
 ### 6.13 Node runtime contract (built as the day-5 baseline; integration deferred)
 
-A node bundle is a complete application whose universe is its own directory: `package.json` (with a `start` script, no install lifecycle scripts) + `package-lock.json` resolved only against the JFrog npm mirror; `node_modules/` and `.env*`/`.npmrc` never ship; data as files inside the bundle; manifest `tier: "node"`, `runtime: "node-20"`, `entrypoint: "package.json"`, TTL 1–90 like every tier.
+A node bundle is a complete application whose universe is its own directory: `package.json` (with a `start` script that listens on `$PORT` on all interfaces — the readiness probe arrives over the pod network, so a loopback bind never goes healthy — and no install lifecycle scripts) + `package-lock.json` resolved only against the JFrog npm mirror; `node_modules/` and `.env*`/`.npmrc` never ship; data as files inside the bundle; manifest `tier: "node"`, `runtime: "node-20"`, `entrypoint: "package.json"`, TTL 1–90 like every tier.
 
 Pipeline `artifact-node-deploy` (everything else reuses the python path): `npm ci --ignore-scripts` from the JFrog mirror, advisory `npm audit`, `npm run build --if-present`, per-prototype image on the JFrog Node base (`node-runtime/Dockerfile` template, pipeline-owned), same approval Environment, `helm upgrade --install node-<artifactId>` of `charts/artifact-node` with every writable path an emptyDir. Scanner stage: JS-001…JS-006 (`contracts/findings.md`) — dangerous Node APIs, lockfile and registry enforcement, shipped dependencies, env files, lifecycle scripts.
 

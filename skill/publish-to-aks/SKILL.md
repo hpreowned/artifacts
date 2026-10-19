@@ -50,6 +50,8 @@ does not include those files).
    `tier`, `runtime` (`null`/`python-1`/`node-20`), `entrypoint` (`index.html`/`app.py`/`package.json`),
    `externalScripts`, `ttlDays` 1–90 default 14, and `generatedBy.tool` set honestly to where you are
    running (`"cowork"` or `"claude-code"`).
+   For `node`, check the server's listen call: a host of `127.0.0.1`/`localhost` never passes the pod's
+   readiness probe — read it from `HOST` with a default of `0.0.0.0` (mechanical; say you did it).
 3. **Do not silently change behavior.** Removing a password form, an outbound fetch, or a subprocess
    call changes what the app does. Flag such findings to the user with the contract rule and why it
    exists; change the staged copy only when the user agrees or the change is behavior-preserving (for

@@ -29,7 +29,8 @@ export function summarize(job: JobRecord, kind: SummaryKind, extra: SummaryExtra
     case "triggered": {
       const run = extra.runUrl ?? "(run url pending)";
       if (extra.approval?.mode === "auto") {
-        return `"${name}" passed scanning cleanly. The deploy pipeline is running at ${run} and no approval is needed; the app goes live when the rollout is healthy.${advisories(job.findings)}`;
+        const why = extra.approval.reasons.length ? ` ${extra.approval.reasons.join(" ")}` : "";
+        return `"${name}" passed scanning. The deploy pipeline is running at ${run} and no approval is needed; the app goes live when the rollout is healthy.${why}${advisories(job.findings)}`;
       }
       const why = extra.approval?.reasons.length ? ` It was sent for review because: ${extra.approval.reasons.join("; ")}.` : "";
       return `"${name}" passed scanning. The deploy pipeline is running at ${run}; a member of ${extra.group ?? "the approver group"} must approve it in Azure DevOps before the app goes live.${why}${advisories(job.findings)}`;

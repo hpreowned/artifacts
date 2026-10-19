@@ -44,7 +44,7 @@ export interface JobRecord {
   summary?: string;
   url?: string;
   /** D16: who approves a server-tier deploy, decided by the scanner before the pipeline runs. */
-  approval?: { mode: "auto" | "human"; reasons: string[] };
+  approval?: { mode: "auto" | "human"; reasons: string[]; precedentJobId?: string };
 }
 
 export interface EventIn {
@@ -92,7 +92,7 @@ export interface StatusView {
   url?: string;
   expiresAt?: string;
   findings?: Finding[];
-  approval?: { group: string; runUrl?: string; mode?: "auto" | "human"; reasons?: string[] };
+  approval?: { group: string; runUrl?: string; mode?: "auto" | "human"; reasons?: string[]; precedentJobId?: string };
   summary?: string;
 }
 
@@ -107,6 +107,7 @@ export function toStatus(job: JobRecord, approverGroup: string): StatusView {
   if (job.approval && job.state !== "rejected" && job.state !== "failed") {
     // Server tiers once the policy decided (D16): the skill tells the publisher whether a human is involved.
     status.approval = { group: approverGroup, mode: job.approval.mode, reasons: job.approval.reasons };
+    if (job.approval.precedentJobId) status.approval.precedentJobId = job.approval.precedentJobId;
     if (job.runUrl) status.approval.runUrl = job.runUrl;
   } else if (job.state === "awaiting_approval") {
     status.approval = job.runUrl ? { group: approverGroup, runUrl: job.runUrl } : { group: approverGroup };

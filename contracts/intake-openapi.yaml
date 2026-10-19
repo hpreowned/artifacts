@@ -75,7 +75,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Status' }
         '401': { description: Bad or used token }
-        '409': { description: Hash mismatch or job not awaiting finalize }
+        '409': { description: 'Hash mismatch, job not awaiting finalize, or an identical bundle from the same publisher is already in flight (body: error, duplicateOf, duplicateState); the job stays awaiting_upload and expires' }
   /v1/publish/{jobId}:
     get:
       operationId: getPublishStatus
@@ -244,6 +244,7 @@ components:
             runUrl: { type: string, format: uri }
             mode: { type: string, enum: [auto, human] }
             reasons: { type: array, items: { type: string } }
+            precedentJobId: { type: string, description: 'Set when auto was granted because a human approved an earlier version of the same app with the same warnings' }
         summary: { type: string, description: 'One paragraph for humans, suitable for Cowork to relay' }
     EventIn:
       type: object

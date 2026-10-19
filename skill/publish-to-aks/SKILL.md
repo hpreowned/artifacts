@@ -72,7 +72,9 @@ does not include those files).
      Cowork network-egress allowlist needs the APIM host (`mcp.corp.com`). Do not retry, do not inline
      the bytes, do not look for another route.
    - Other non-zero: a 401 means the token was used or expired — `beginPublish` again and re-upload;
-     a 413 means the bundle is over `maxBytes` — shrink it.
+     a 413 means the bundle is over `maxBytes` — shrink it; a 409 naming `duplicateOf` means this exact
+     bundle is already in flight under that job — do not publish again, poll that job with
+     `getPublishStatus` and report it.
 8. Poll `getPublishStatus` every 10 seconds, up to 10 minutes, until `rejected`, `awaiting_approval`,
    `live`, `failed` or `expired`.
 
@@ -83,7 +85,9 @@ does not include those files).
 - `rejected` — fix every finding in `findings` (each has `rule`, `file`, `line`, `message`) under the
   rule-3 consent rule, rerun preflight, then start again from step 6 with a new `beginPublish`. At most
   3 attempts; if the third is rejected, stop and show the user the remaining findings.
-- `awaiting_approval` — Python and Node only, and only when the scan raised a warning: `approval.reasons`
+- `awaiting_approval` — Python and Node only, and only when the scan raised a warning a human has not
+  seen before for this app (a version a human already approved, with the same warnings, goes through
+  automatically and `approval.reasons` says so): `approval.reasons`
   says why a reviewer is looking. Tell the user in plain words what was flagged and that the platform team
   will review it (usually within a day), that they need do nothing, and that the link follows on approval.
   Then stop. Never try to approve anything yourself. Offer the job id and run link only if they ask.

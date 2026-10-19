@@ -10,7 +10,7 @@ import { extractBundle, type Extracted } from "./extract.js";
 import { intakeChecks } from "./intake-checks.js";
 import { jsChecks } from "./js-checks.js";
 import type { PipelineTrigger } from "./pipeline.js";
-import { decideApproval, type ApprovalPolicy } from "./approval-policy.js";
+import { decideApproval, findPrecedent, type ApprovalPolicy } from "./approval-policy.js";
 import { severityOf, verdict } from "./policy.js";
 import { pythonChecks } from "./python-stage.js";
 import { secretsScan } from "./secrets.js";
@@ -163,7 +163,7 @@ async function settle(job: JobRecord, ctx: ScanContext, deps: WorkerDeps): Promi
   // Azure DevOps pipeline it reaches (artifact-python-deploy vs artifact-node-deploy) is a config concern for
   // whoever wires the real PipelineTrigger, not the worker (see the final report).
   // D16: decide who approves before the pipeline runs, so the run targets the right Azure DevOps environment.
-  const approval = decideApproval(findings, deps.opts.approvalPolicy);
+  const approval = decideApproval(findings, deps.opts.approvalPolicy, findPrecedent(await jobs.list(), job));
   job.approval = approval;
   await save("scanning", summarize(job, "triggering"));
   try {

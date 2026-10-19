@@ -37,7 +37,9 @@ export async function uploadBundle(req: IncomingMessage, res: ServerResponse, de
   sendEmpty(res, 201);
 }
 
-/** POST /v1/publish/{jobId}/finalize { sha256 } → 202 Status (scanning). Mismatch → 409. */
+const IN_FLIGHT = new Set(["scanning", "awaiting_approval", "deploying"]);
+
+/** POST /v1/publish/{jobId}/finalize { sha256 } → 202 Status (scanning). Mismatch or in-flight duplicate → 409. */
 export async function finalizePublish(req: IncomingMessage, res: ServerResponse, deps: AppDeps, jobId: string): Promise<void> {
   const job = await jobForToken(req, deps, jobId, 1);
   const body = await readJson(req);
@@ -45,6 +47,19 @@ export async function finalizePublish(req: IncomingMessage, res: ServerResponse,
     fail(400, "body must be { sha256: <64 hex chars> }");
   }
   if (!safeEqual(body.sha256, job.sha256)) fail(409, "sha256 does not match the uploaded bundle");
+  // An identical bundle from the same publisher that is still in flight is a duplicate, not a new publish:
+  // refusing it keeps approvers from seeing the same artifact three times. Republishing content that is
+  // already live stays allowed — that is how a TTL gets refreshed. The job stays awaiting_upload and expires.
+  const duplicate = (await deps.stores.jobs.list()).find(
+    (j) => j.jobId !== job.jobId && j.ownerOid === job.ownerOid && j.sha256 === job.sha256 && IN_FLIGHT.has(j.state),
+  );
+  if (duplicate) {
+    await deps.stores.bundles.delete(job.jobId).catch(() => undefined);
+    fail(409, `an identical bundle from you is already in flight as ${duplicate.jobId} (${duplicate.state}); follow that job instead of publishing again`, {
+      duplicateOf: duplicate.jobId,
+      duplicateState: duplicate.state,
+    });
+  }
   job.uploadTokenUses = 2;
   job.state = "scanning";
   job.updatedAt = deps.now().toISOString();

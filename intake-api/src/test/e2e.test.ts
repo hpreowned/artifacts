@@ -38,7 +38,7 @@ interface Status {
   url?: string;
   expiresAt?: string;
   findings?: { rule: string; severity: string }[];
-  approval?: { group: string; runUrl?: string; mode?: string; reasons?: string[] };
+  approval?: { group: string; runUrl?: string; mode?: string; reasons?: string[]; precedentJobId?: string };
   summary?: string;
 }
 
@@ -173,6 +173,52 @@ test("a node bundle with a warning (JS-005 outbound fetch) → D16 human path �
     assert.equal(status.approval?.mode, "human");
     assert.ok(status.approval?.reasons?.some((r) => r.startsWith("JS-005")), JSON.stringify(status.approval));
     assert.equal(status.url, undefined, "nothing is live while a human is looking");
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
+/** begin + upload without finalizing, so a test can look at the finalize answer itself. */
+async function beginAndUpload(dir: string): Promise<{ jobId: string; auth: Record<string, string>; sha256: string }> {
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  const b = await call(stack.baseUrl, "POST", "/v1/publish", { headers: PUBLISHER, json: manifest });
+  assert.equal(b.status, 201, b.text);
+  const { jobId, uploadToken } = b.body as { jobId: string; uploadToken: string };
+  const zip = await zipDir(dir);
+  const auth = { authorization: `Bearer ${uploadToken}` };
+  assert.equal((await call(stack.baseUrl, "PUT", `/v1/publish/${jobId}/upload`, { headers: auth, body: zip })).status, 201);
+  return { jobId, auth, sha256: createHash("sha256").update(zip).digest("hex") };
+}
+
+test("an identical bundle still in flight is refused at finalize (409, duplicateOf); once live, republishing is allowed and approved by precedent", async () => {
+  const fixture = await writePrototypeFixture();
+  try {
+    await writeFile(join(fixture, "server.js"), "const http = require('node:http');\nfetch('https://example.com/ping');\nhttp.createServer((req, res) => res.end('ok')).listen(process.env.PORT);\n");
+    await writeFile(join(fixture, "manifest.json"), JSON.stringify({
+      schemaVersion: 2, name: "inventory-precedent", tier: "node", runtime: "node-20", entrypoint: "package.json", ttlDays: 14, generatedBy: { tool: "artifactctl" },
+    }));
+    // 1. first publish: warning → human → awaiting_approval
+    const first = await publishFrom(fixture);
+    assert.equal(first.status.state, "awaiting_approval", JSON.stringify(first.status));
+    // 2. identical bundle while the first is in flight → refused, pointing at the first job
+    const dup = await beginAndUpload(fixture);
+    const f = await call(stack.baseUrl, "POST", `/v1/publish/${dup.jobId}/finalize`, { headers: dup.auth, json: { sha256: dup.sha256 } });
+    assert.equal(f.status, 409, f.text);
+    assert.equal(f.body.duplicateOf, first.status.jobId);
+    assert.equal(f.body.duplicateState, "awaiting_approval");
+    const refused = await call(stack.baseUrl, "GET", `/v1/publish/${dup.jobId}`, { headers: PUBLISHER });
+    assert.equal(refused.body.state, "awaiting_upload", "the refused job is left to expire, nothing was queued");
+    // 3. a human approves the first (pipeline callbacks) → live
+    const pipeline = { authorization: `Bearer ${secrets.pipeline}` };
+    for (const state of ["deploying", "live"]) {
+      assert.equal((await call(stack.baseUrl, "POST", `/v1/publish/${first.status.jobId}/events`, { headers: pipeline, json: { state } })).status, 204);
+    }
+    // 4. the same app again (identical bundle; TTL refresh): allowed now, and auto by precedent — no human
+    const second = await publishFrom(fixture);
+    assert.equal(second.status.state, "live", JSON.stringify(second.status));
+    assert.equal(second.status.approval?.mode, "auto");
+    assert.equal(second.status.approval?.precedentJobId, first.status.jobId);
+    assert.match(second.status.approval?.reasons?.[0] ?? "", /approved on \d{4}-\d{2}-\d{2}/);
   } finally {
     await rm(fixture, { recursive: true, force: true });
   }

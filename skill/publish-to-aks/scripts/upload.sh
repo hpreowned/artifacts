@@ -77,7 +77,10 @@ request POST "$FINALIZE" -H 'Content-Type: application/json' --data "{\"sha256\"
 case "$CODE" in
   202) ;;
   401) die "finalize token rejected; call beginPublish again" ;;
-  409) die "finalize rejected (hash mismatch or wrong state): $(head -c 300 "$BODY")" ;;
+  409) if grep -q '"duplicateOf"' "$BODY" 2>/dev/null; then
+         die "DUPLICATE: this exact bundle is already in flight — $(head -c 300 "$BODY")"
+       fi
+       die "finalize rejected (hash mismatch or wrong state): $(head -c 300 "$BODY")" ;;
   *) die "finalize returned HTTP $CODE: $(head -c 300 "$BODY")" ;;
 esac
 echo "UPLOADED $JOB $SHA"

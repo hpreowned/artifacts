@@ -18,7 +18,10 @@ after(async () => {
   await api.stop();
 });
 
-const zip = Buffer.from("the API only hashes the bytes; the worker parses them"); // any bytes will do here
+// Any bytes will do here — but unique per test: jobs never leave `scanning` without a worker, and finalize
+// refuses an identical in-flight bundle from the same publisher (409 duplicateOf).
+let zipSeq = 0;
+const freshZip = () => Buffer.from(`the API only hashes the bytes; the worker parses them #${++zipSeq}`);
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 const OTHER_PUBLISHER = { "x-publisher-oid": "oid-mallory", "x-publisher-upn": "mallory@example.test" };
@@ -85,6 +88,7 @@ test("without DEV_AUTH, intake-api refuses to start when ENTRA_TENANT_ID or ENTR
 });
 
 test("uploadBundle: 201 once; the token is single-use and job-bound; wrong token 401; unknown job 404; oversize 413", async () => {
+  const zip = freshZip();
   const b = await begin();
   const path = `/v1/publish/${b.jobId}/upload`;
   assert.equal((await call(api.base, "PUT", path, { body: zip })).status, 401, "no token");
@@ -99,6 +103,7 @@ test("uploadBundle: 201 once; the token is single-use and job-bound; wrong token
 });
 
 test("finalizePublish: 409 before upload and on hash mismatch; 202 scanning and enqueued; then dead", async () => {
+  const zip = freshZip();
   const seen: string[] = [];
   const unsubscribe = api.queue.subscribe(async (m) => {
     seen.push(m.jobId);
@@ -128,6 +133,7 @@ test("finalizePublish: 409 before upload and on hash mismatch; 202 scanning and 
 });
 
 test("the upload token expires after 10 minutes and the job becomes expired", async () => {
+  const zip = freshZip();
   const b = await begin();
   const start = api.clock.now;
   api.clock.now = new Date(start.getTime() + 11 * 60_000);
@@ -142,6 +148,7 @@ test("the upload token expires after 10 minutes and the job becomes expired", as
 });
 
 test("getPublishStatus: Status shape; 404 for another caller, unknown or malformed ids; 405 and healthz", async () => {
+  const zip = freshZip();
   const b = await begin();
   const s = await call(api.base, "GET", `/v1/publish/${b.jobId}`, { headers: PUBLISHER });
   assert.equal(s.status, 200);
@@ -162,6 +169,7 @@ test("getPublishStatus: Status shape; 404 for another caller, unknown or malform
 });
 
 test("postPublishEvent: pipeline token required; transitions per contracts/states.md; illegal → 409", async () => {
+  const zip = freshZip();
   const b = await begin(PUBLISHER, { ...STATIC_MANIFEST, tier: "python", runtime: "python-1", entrypoint: "app.py" });
   const events = `/v1/publish/${b.jobId}/events`;
   const post = (json: unknown, token = api.secrets.pipelineToken) => call(api.base, "POST", events, { headers: auth(token), json });
@@ -216,4 +224,23 @@ test("createViewToken: internal key required; 404 unless live; token verifies wi
   job.expiresAt = new Date(api.clock.now.getTime() - 1).toISOString();
   await api.stores.jobs.put(job);
   assert.equal((await call(api.base, "POST", "/v1/view-token", { headers, json: body })).status, 404, "past TTL is not live");
+});
+
+test("finalizePublish: an identical bundle from the same publisher still in flight → 409 duplicateOf, the new job is left awaiting_upload", async () => {
+  const zip = freshZip();
+  const first = await begin();
+  const path = (id: string) => `/v1/publish/${id}`;
+  assert.equal((await call(api.base, "PUT", `${path(first.jobId)}/upload`, { headers: auth(first.uploadToken), body: zip })).status, 201);
+  assert.equal((await call(api.base, "POST", `${path(first.jobId)}/finalize`, { headers: auth(first.uploadToken), json: { sha256: sha(zip) } })).status, 202);
+  const second = await begin();
+  assert.equal((await call(api.base, "PUT", `${path(second.jobId)}/upload`, { headers: auth(second.uploadToken), body: zip })).status, 201);
+  const r = await call(api.base, "POST", `${path(second.jobId)}/finalize`, { headers: auth(second.uploadToken), json: { sha256: sha(zip) } });
+  assert.equal(r.status, 409, r.text);
+  assert.equal(r.body.duplicateOf, first.jobId);
+  assert.equal(r.body.duplicateState, "scanning");
+  assert.equal((await call(api.base, "GET", path(second.jobId), { headers: PUBLISHER })).body.state, "awaiting_upload");
+  // another publisher with the very same bytes is not a duplicate of someone else's job
+  const theirs = await begin(OTHER_PUBLISHER);
+  assert.equal((await call(api.base, "PUT", `${path(theirs.jobId)}/upload`, { headers: auth(theirs.uploadToken), body: zip })).status, 201);
+  assert.equal((await call(api.base, "POST", `${path(theirs.jobId)}/finalize`, { headers: auth(theirs.uploadToken), json: { sha256: sha(zip) } })).status, 202);
 });

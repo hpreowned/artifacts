@@ -128,7 +128,13 @@ export class IntakeClient {
     const r = await this.send("POST", finalizeUrl(uploadUrl), { authorization: `Bearer ${uploadToken}`, "content-type": "application/json" }, JSON.stringify({ sha256 }));
     if (r.status === 202) return parseJson(r.text, "finalize") as Status;
     if (r.status === 401) throw new ApiError("finalize token rejected", 401);
-    if (r.status === 409) throw new ApiError(`finalize rejected (hash mismatch or wrong state): ${r.text.slice(0, 200)}`, 409);
+    if (r.status === 409) {
+      const body = parseJsonLenient(r.text) as { duplicateOf?: string; duplicateState?: string } | undefined;
+      if (body?.duplicateOf) {
+        throw new ApiError(`this exact bundle is already in flight as ${body.duplicateOf} (${body.duplicateState ?? "pending"}); follow that job instead of publishing again`, 409);
+      }
+      throw new ApiError(`finalize rejected (hash mismatch or wrong state): ${r.text.slice(0, 200)}`, 409);
+    }
     throw new ApiError(`finalize returned HTTP ${r.status}: ${r.text.slice(0, 200)}`, r.status);
   }
 

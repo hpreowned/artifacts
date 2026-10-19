@@ -91,7 +91,9 @@ does not include those files).
   says why a reviewer is looking. Tell the user in plain words what was flagged and that the platform team
   will review it (usually within a day), that they need do nothing, and that the link follows on approval.
   Then stop. Never try to approve anything yourself. Offer the job id and run link only if they ask.
-- `live` — report `url` (internal, behind corporate sign-in) and `expiresAt`. Done.
+- `live` — report `url` (internal, behind corporate sign-in), `expiresAt`, and the platform's `summary`.
+  Done. You have not opened the link: say what the platform reported, never what the app does at the URL
+  ("the server now answers /api" is a claim you cannot make — the user will find out by clicking).
 - `failed` — a platform problem, not the artifact. Report `summary` and stop; resubmit only if the
   message asks for it (for example a timed-out malware scan, rule MAL-002).
 - `expired` — the upload or approval timed out. Start again from step 6 if the user still wants it.
@@ -115,6 +117,7 @@ does not include those files).
 ## Reporting to the user
 
 Write for a business user, not an engineer: what happened, whether they must do anything, when they get
-the link. The link, the expiry, what alignment changed, anything you could not fix — in sentences, not
+the link. `summary` is the platform's own account of what happened — relay it, and if it qualifies the
+result (a warning, a dev-stack note, a timeout), the qualification reaches the user too. The link, the expiry, what alignment changed, anything you could not fix — in sentences, not
 rule ids (translate `JS-005` into "the app tries to call an outside service"). Job ids and run links on
 request only. Say "internal link, requires corporate sign-in" so nobody pastes it to a customer.

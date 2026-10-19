@@ -244,3 +244,25 @@ test("finalizePublish: an identical bundle from the same publisher still in flig
   assert.equal((await call(api.base, "PUT", `${path(theirs.jobId)}/upload`, { headers: auth(theirs.uploadToken), body: zip })).status, 201);
   assert.equal((await call(api.base, "POST", `${path(theirs.jobId)}/finalize`, { headers: auth(theirs.uploadToken), json: { sha256: sha(zip) } })).status, 202);
 });
+
+test("pipeline fetch: GET record and bundle need the pipeline token; 404 for unknown jobs; bytes round-trip; no token hash leaks", async () => {
+  const zip = freshZip();
+  const b = await begin();
+  assert.equal((await call(api.base, "PUT", `/v1/publish/${b.jobId}/upload`, { headers: auth(b.uploadToken), body: zip })).status, 201);
+  assert.equal((await call(api.base, "POST", `/v1/publish/${b.jobId}/finalize`, { headers: auth(b.uploadToken), json: { sha256: sha(zip) } })).status, 202);
+  const tok = auth(api.secrets.pipelineToken);
+  assert.equal((await call(api.base, "GET", `/v1/publish/${b.jobId}/record`, { headers: PUBLISHER })).status, 401, "publisher identity is not the pipeline");
+  assert.equal((await call(api.base, "GET", `/v1/publish/${b.jobId}/bundle`, {})).status, 401);
+  const rec = await call(api.base, "GET", `/v1/publish/${b.jobId}/record`, { headers: tok });
+  assert.equal(rec.status, 200, rec.text);
+  assert.equal(rec.body.jobId, b.jobId);
+  assert.equal(rec.body.state, "scanning");
+  assert.ok(rec.body.artifactId && rec.body.manifest && rec.body.expiresAt);
+  assert.equal(rec.body.uploadTokenHash, undefined, "the token hash never leaves the store");
+  const bundle = await call(api.base, "GET", `/v1/publish/${b.jobId}/bundle`, { headers: tok });
+  assert.equal(bundle.status, 200);
+  assert.equal(bundle.text, zip.toString());
+  assert.equal((await call(api.base, "GET", "/v1/publish/job_00000000000000000000/record", { headers: tok })).status, 404);
+  assert.equal((await call(api.base, "GET", "/v1/publish/job_00000000000000000000/bundle", { headers: tok })).status, 404);
+});
+

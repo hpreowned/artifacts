@@ -49,3 +49,24 @@ export async function createViewToken(req: IncomingMessage, res: ServerResponse,
   const token = sign({ t: "view", aid: job.artifactId, oid: body.viewerOid, exp }, deps.cfg.viewTokenKey);
   sendJson(res, 200, { token, expiresAt: new Date(exp * 1000).toISOString(), artifactExpiresAt: job.expiresAt });
 }
+
+/** GET /v1/publish/{jobId}/record (bearer = PIPELINE_TOKEN) → the job record the pipeline needs (no token hash). */
+export async function getJobRecord(req: IncomingMessage, res: ServerResponse, deps: AppDeps, jobId: string): Promise<void> {
+  if (!deps.cfg.pipelineToken || !safeEqual(bearer(req), deps.cfg.pipelineToken)) fail(401, "bad pipeline token");
+  const job = await deps.stores.jobs.get(jobId);
+  if (!job) fail(404, "unknown job");
+  const { uploadTokenHash: _hash, ...record } = job;
+  sendJson(res, 200, record);
+}
+
+/** GET /v1/publish/{jobId}/bundle (bearer = PIPELINE_TOKEN) → the uploaded zip, so a pipeline (or the
+ *  operator playing one) need not reach Blob. 404 once the worker dropped it (rejected/failed/live static). */
+export async function getBundle(req: IncomingMessage, res: ServerResponse, deps: AppDeps, jobId: string): Promise<void> {
+  if (!deps.cfg.pipelineToken || !safeEqual(bearer(req), deps.cfg.pipelineToken)) fail(401, "bad pipeline token");
+  const job = await deps.stores.jobs.get(jobId);
+  if (!job) fail(404, "unknown job");
+  const data = await deps.stores.bundles.get(jobId);
+  if (!data) fail(404, "no bundle held for this job");
+  res.writeHead(200, { "content-type": "application/zip", "content-length": String(data.length), "cache-control": "no-store" });
+  res.end(data);
+}

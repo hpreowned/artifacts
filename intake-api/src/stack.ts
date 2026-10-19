@@ -26,7 +26,7 @@ export interface LocalStack {
 }
 
 export async function startLocalStack(cfg: Config, port: number = cfg.port): Promise<LocalStack> {
-  if (cfg.backend !== "memory") throw new Error("the local stack runs on BACKEND=memory only");
+  if (cfg.backend !== "memory" && cfg.backend !== "disk") throw new Error("the local stack runs on BACKEND=memory or BACKEND=disk only");
   if (!cfg.pipelineToken) throw new Error("the local stack needs PIPELINE_TOKEN so the fake pipeline can call /events");
   const stores = createStores(cfg);
   const entraVerifier = cfg.devAuth ? undefined : createEntraTokenVerifier({ tenantId: cfg.entraTenantId!, audience: cfg.entraAudience!, requiredScope: cfg.entraRequiredScope });
@@ -35,7 +35,10 @@ export async function startLocalStack(cfg: Config, port: number = cfg.port): Pro
   const bound = (server.address() as AddressInfo).port;
   const baseUrl = `http://localhost:${bound}`;
   const defender = new FakeDefenderReader(cfg.worker.defenderFakeMalicious);
-  const pipeline = new FakePipelineTrigger(postFakeCallbacks(baseUrl, cfg.pipelineToken), `${baseUrl}/dev/approval`);
+  // PIPELINE_TRIGGER=manual (dev cluster): the run URL still points at the dev page, but nothing is played —
+  // an operator runs scripts/play-node-pipeline.sh, which posts the callbacks the real pipeline would.
+  const callbacks = cfg.worker.pipelineTrigger === "manual" ? undefined : postFakeCallbacks(baseUrl, cfg.pipelineToken);
+  const pipeline = new FakePipelineTrigger(callbacks, `${cfg.publicBaseUrl}/dev/approval`);
   const stopWorker = startWorker({ stores, defender, pipeline, opts: workerOptions(cfg) });
   const stopGc = startGc(stores, cfg.worker.gcIntervalSeconds);
   const stopSweeper = startExpirySweeper(stores.jobs, cfg.uploadExpirySweepSeconds);

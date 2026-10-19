@@ -21,6 +21,10 @@ export async function devApprovalPage(_req: IncomingMessage, res: ServerResponse
 The local stack has no Azure DevOps, so nothing happens here by itself.</p>
 <p>Job <code>${esc(jobId)}</code> · tier <code>${esc(job.tier)}</code> · state <span class="s">${esc(job.state)}</span></p>
 ${job.approval ? `<p>Approval policy (D16): <strong>${job.approval.mode === "auto" ? "auto — the scan was clean, no human in the loop; the fake pipeline already played deploying → live" : "human — a warning sent this to the approver group"}</strong>${job.approval.reasons.length ? `<br>${job.approval.reasons.map(esc).join("<br>")}` : ""}</p>` : ""}
+${deps.cfg.worker.pipelineTrigger === "manual" ? `<h2>This stack deploys nothing by itself (PIPELINE_TRIGGER=manual)</h2>
+<p>From a laptop with Docker, kubectl and the pipeline token, run <code>scripts/play-node-pipeline.sh ${esc(jobId)}</code>:
+it fetches this job's record and bundle from this API, builds the real image, installs the artifact chart on the
+cluster and posts the same callbacks the Azure DevOps pipeline would.</p>` : ""}
 <h2>Play the pipeline's callbacks by hand</h2>
 <p>The token is <code>PIPELINE_TOKEN</code> in <code>.local/dev.env</code> (<code>source scripts/dev-env.sh</code> exports it).</p>
 <p>Approve, then report the rollout healthy:</p>

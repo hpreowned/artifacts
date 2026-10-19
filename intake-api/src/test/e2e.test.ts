@@ -118,7 +118,7 @@ test("python-ok: clean scan → D16 auto path → the fake pipeline posts deploy
   assert.equal(status.state, "live", JSON.stringify(status));
   assert.equal(status.approval?.mode, "auto");
   assert.deepEqual(status.approval?.reasons, []);
-  assert.equal(status.approval?.runUrl, `${stack.baseUrl}/dev/approval/${status.jobId}`, "the local stack points the run URL at its own dev approval page");
+  assert.equal(status.approval?.runUrl, `http://localhost:8080/dev/approval/${status.jobId}`, "the run URL is the dev approval page at PUBLIC_BASE_URL (what the laptop opens; default http://localhost:8080)");
   assert.match(status.url ?? "", /^https:\/\/artifacts\.example\.test\/view\/[a-z0-9]{12}$/, "pipeline-deployed artifacts get their viewer URL on live");
 });
 
@@ -135,7 +135,7 @@ test("node-ok (in-test fixture): clean scan → auto path → live, same as pyth
     assert.equal(status.state, "live", JSON.stringify(status));
     assert.equal(status.approval?.mode, "auto");
     assert.equal(status.approval?.group, "artifacts-approvers");
-    assert.equal(status.approval?.runUrl, `${stack.baseUrl}/dev/approval/${status.jobId}`, "the local stack points the run URL at its own dev approval page");
+    assert.equal(status.approval?.runUrl, `http://localhost:8080/dev/approval/${status.jobId}`, "the run URL is the dev approval page at PUBLIC_BASE_URL (what the laptop opens; default http://localhost:8080)");
   } finally {
     await rm(fixture, { recursive: true, force: true });
   }

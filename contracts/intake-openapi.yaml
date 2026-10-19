@@ -106,6 +106,30 @@ paths:
         '204': { description: Recorded }
         '401': { description: Bad token }
         '409': { description: Illegal transition }
+  /v1/publish/{jobId}/record:
+    get:
+      operationId: getJobRecord
+      x-internal: true
+      summary: The job record a deploy pipeline needs (artifactId, manifest, expiresAt, approval). Internal; bearer is the pipeline token.
+      security:
+        - pipelineToken: []
+      parameters: [ { $ref: '#/components/parameters/jobId' } ]
+      responses:
+        '200': { description: Job record without the upload-token hash }
+        '401': { description: Bad pipeline token }
+        '404': { description: Unknown job }
+  /v1/publish/{jobId}/bundle:
+    get:
+      operationId: getBundle
+      x-internal: true
+      summary: The uploaded bundle, so a pipeline need not reach Blob. Internal; bearer is the pipeline token. 404 once the worker dropped it.
+      security:
+        - pipelineToken: []
+      parameters: [ { $ref: '#/components/parameters/jobId' } ]
+      responses:
+        '200': { description: application/zip }
+        '401': { description: Bad pipeline token }
+        '404': { description: Unknown job or no bundle held }
   /v1/view-token:
     post:
       operationId: createViewToken

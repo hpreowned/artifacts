@@ -4,7 +4,7 @@ import type { EntraTokenVerifier } from "./entra-token.js";
 import { HttpError, sendJson } from "./http.js";
 import { JOB_ID_RE } from "./ids.js";
 import { devApprovalPage } from "./routes/dev.js";
-import { createViewToken, postPublishEvent } from "./routes/internal.js";
+import { createViewToken, getBundle, getJobRecord, postPublishEvent } from "./routes/internal.js";
 import { beginPublish, getPublishStatus } from "./routes/publish.js";
 import { finalizePublish, uploadBundle } from "./routes/upload.js";
 import type { Stores } from "./stores/types.js";
@@ -30,6 +30,8 @@ const ROUTES: Route[] = [
   { method: "PUT", pattern: new RegExp(`^/v1/publish/${JOB}/upload$`), handler: uploadBundle },
   { method: "POST", pattern: new RegExp(`^/v1/publish/${JOB}/finalize$`), handler: finalizePublish },
   { method: "POST", pattern: new RegExp(`^/v1/publish/${JOB}/events$`), handler: postPublishEvent },
+  { method: "GET", pattern: new RegExp(`^/v1/publish/${JOB}/record$`), handler: getJobRecord },
+  { method: "GET", pattern: new RegExp(`^/v1/publish/${JOB}/bundle$`), handler: getBundle },
   { method: "GET", pattern: new RegExp(`^/v1/publish/${JOB}$`), handler: getPublishStatus },
   { method: "POST", pattern: /^\/v1\/view-token$/, handler: (req, res, deps) => createViewToken(req, res, deps) },
   { method: "GET", pattern: /^\/healthz$/, handler: async (_req, res) => sendJson(res, 200, { ok: true }) },

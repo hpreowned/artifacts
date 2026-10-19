@@ -17,6 +17,7 @@ export function createPipelineTrigger(cfg: Config): PipelineTrigger {
     const { org, project, pipelineId, nodePipelineId } = cfg.worker.ado;
     return new AzureDevOpsPipelineTrigger(org!, project!, pipelineId!, nodePipelineId!);
   }
+  if (cfg.worker.pipelineTrigger === "manual") return new FakePipelineTrigger(undefined, `${cfg.publicBaseUrl}/dev/approval`);
   const callback = cfg.pipelineToken ? postFakeCallbacks(cfg.worker.intakeInternalUrl, cfg.pipelineToken) : undefined;
   if (!callback) console.warn("[worker] PIPELINE_TOKEN is not set: the fake pipeline will not post awaiting_approval");
   return new FakePipelineTrigger(callback, `${cfg.publicBaseUrl}/dev/approval`);

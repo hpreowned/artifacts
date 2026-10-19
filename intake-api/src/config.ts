@@ -16,7 +16,8 @@ export interface WorkerConfig {
   defenderPollSeconds: number;
   defenderFakeMalicious: Set<string>;
   gcIntervalSeconds: number;
-  pipelineTrigger: "fake" | "ado";
+  /** `manual`: nothing deploys by itself; an operator plays the pipeline (scripts/play-node-pipeline.sh). */
+  pipelineTrigger: "fake" | "ado" | "manual";
   /** `pipelineId` is the python-tier run; `nodePipelineId` (`ADO_NODE_PIPELINE_ID`) is `artifact-node-deploy`'s.
    *  Static jobs never trigger a pipeline, so neither is read for them. Tier-based selection between the two
    *  happens inside the trigger implementation (scanner/src/pipeline.ts), not here. */
@@ -41,8 +42,10 @@ export interface Config {
   pipelineToken: string | undefined;
   internalSharedKey: string | undefined;
   viewTokenKey: Buffer;
-  backend: "memory" | "azure";
+  backend: "memory" | "disk" | "azure";
   serveRoot: string;
+  /** BACKEND=disk: where job records and bundles live (one process, survives restarts). */
+  dataRoot: string;
   approverGroup: string;
   uploadExpirySweepSeconds: number;
   storageAccountUrl: string | undefined;
@@ -53,7 +56,7 @@ export interface Config {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const backend = env.BACKEND === "azure" ? "azure" : "memory";
+  const backend = env.BACKEND === "azure" ? "azure" : env.BACKEND === "disk" ? "disk" : "memory";
   const key = env.VIEW_TOKEN_KEY ? Buffer.from(env.VIEW_TOKEN_KEY, "base64") : randomBytes(32);
   if (key.length < 32) throw new Error("VIEW_TOKEN_KEY must decode to at least 32 bytes");
   if (backend === "azure" && !env.STORAGE_ACCOUNT_URL) throw new Error("BACKEND=azure requires STORAGE_ACCOUNT_URL");
@@ -66,7 +69,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error("ENTRA_TENANT_ID and ENTRA_AUDIENCE are required when DEV_AUTH is unset (intake-api verifies the caller's Entra token itself)");
   }
   const port = int(env.PORT, 8080);
-  const pipelineTrigger = env.PIPELINE_TRIGGER === "ado" || (env.PIPELINE_TRIGGER === undefined && backend === "azure") ? "ado" : "fake";
+  const pipelineTrigger: "fake" | "ado" | "manual" = env.PIPELINE_TRIGGER === "manual" ? "manual"
+    : env.PIPELINE_TRIGGER === "ado" || (env.PIPELINE_TRIGGER === undefined && backend === "azure") ? "ado" : "fake";
   const ado = { org: env.ADO_ORG, project: env.ADO_PROJECT, pipelineId: env.ADO_PIPELINE_ID, nodePipelineId: env.ADO_NODE_PIPELINE_ID };
   if (pipelineTrigger === "ado" && (!ado.org || !ado.project || !ado.pipelineId || !ado.nodePipelineId)) {
     throw new Error("PIPELINE_TRIGGER=ado requires ADO_ORG, ADO_PROJECT, ADO_PIPELINE_ID and ADO_NODE_PIPELINE_ID");
@@ -87,6 +91,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     viewTokenKey: key,
     backend,
     serveRoot: resolve(env.SERVE_ROOT ?? "./.local/serving"),
+    dataRoot: resolve(env.DATA_ROOT ?? "./.local/data"),
     approverGroup: env.APPROVER_GROUP ?? "artifacts-approvers",
     uploadExpirySweepSeconds: int(env.UPLOAD_EXPIRY_SWEEP_SECONDS, 60),
     storageAccountUrl: env.STORAGE_ACCOUNT_URL,

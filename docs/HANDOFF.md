@@ -495,6 +495,15 @@ Added on 2026-10-15, travels from snapshot-2 on. The launchpad's three runtimes 
 - Charts: `charts/artifact-node` (validated offline by `charts/tests/node-conformance.sh`, wired into `deploy/validate.sh`). GC already covers `node-*` releases.
 - M8's gate (STATUS.md) runs on the cluster exactly like M5's, with `tests/corpus/node-ok` as the acceptance bundle.
 
+## Addendum: the node runtime's first real run (before the cluster)
+
+`scripts/run-node-bundle.sh <bundle>` is a platform-team tool: it builds the real `node-runtime/Dockerfile`
+on a laptop with Docker (base image and registry overridable through build arguments the pipeline never
+passes) and runs the bundle under the cluster's constraints, probing it over the container network like the
+readiness probe. Run it on the React fixture's node bundle before I8's first cluster deploy — it is the
+only pre-cluster exercise of the node contract, and it was written on a machine without Docker: its first
+real run is on yours (`--dry-run` shows the commands). Expected on the fixture: READY, "egress: denied".
+
 ## Addendum: proving the skill before the connector exists
 
 `mcp-local/` is a local stdio MCP server giving **Claude Code** the production tool pair against the local
@@ -506,3 +515,5 @@ before I1–I5, so connector work starts against a skill already known to behave
 
 The judgment call worth watching is the dev-proxy trap: `tests/fixtures/react-express-app/README.md` is a
 React+Express prototype built for exactly that. Run it before calling the local loop complete.
+
+UNVERIFIED: `scripts/run-node-bundle.sh` has never executed against Docker (none on the authoring machine); syntax-checked and dry-run only. First run on the integration laptop.

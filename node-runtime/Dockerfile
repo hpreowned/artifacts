@@ -10,10 +10,14 @@
 # Build stage: `npm ci --ignore-scripts` against the JFrog npm mirror only (no install/postinstall scripts
 # run -- same posture as the lockfile-mandatory, no-arbitrary-code contract in §6.13), then `npm run build`
 # if the bundle declares one (a static client to prebuild; plain Node servers have no build step).
-FROM jfrog.corp.com/docker/node:20-slim AS build
+# Build arguments exist for one reason: the platform team's local gate (scripts/run-node-bundle.sh) builds this
+# same file on a laptop that cannot reach JFrog. The pipeline passes none, so production is the defaults.
+ARG BASE_IMAGE=jfrog.corp.com/docker/node:20-slim
+FROM ${BASE_IMAGE} AS build
+ARG NPM_REGISTRY=https://jfrog.corp.com/artifactory/api/npm/npm-remote/
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts --registry https://jfrog.corp.com/artifactory/api/npm/npm-remote/
+RUN npm ci --ignore-scripts --registry "$NPM_REGISTRY"
 COPY . .
 RUN npm run build --if-present
 
@@ -21,7 +25,7 @@ RUN npm run build --if-present
 # -- never ship). uid 65532, read-only root filesystem; the app may only write under the paths
 # `charts/artifact-node` mounts as emptyDir (default /app/data and /tmp -- see that chart's `writablePaths`
 # value, which must match whatever this app actually writes to).
-FROM jfrog.corp.com/docker/node:20-slim
+FROM ${BASE_IMAGE}
 WORKDIR /app
 COPY --from=build /app ./
 RUN npm prune --omit=dev --ignore-scripts \

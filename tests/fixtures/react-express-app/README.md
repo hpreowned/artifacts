@@ -55,6 +55,14 @@ Publish the identical bundle again while the first is still waiting and the plat
 version has been approved and is live, the next version with no *new* warnings is approved automatically by
 precedent (`approval.precedentJobId`) — a human looks again only when something new appears.
 
+## Running the node branch for real (platform team only, Docker required)
+
+Business users never do this. For the platform team, `scripts/run-node-bundle.sh <staged-bundle>` builds the
+image from the real `node-runtime/Dockerfile` and runs it under the cluster's constraints — no egress,
+read-only filesystem, `/tmp` only, non-root, `$PORT` — and reaches it the way the readiness probe does,
+over the container network. A server bound to loopback fails here exactly as it would on the cluster. It
+prints a loopback URL to open; Ctrl+C removes everything. Pass `--dry-run` to see the commands.
+
 ## The approval link, locally
 
 The node branch ends at `awaiting_approval` with an approval-run link. In production that is the Azure

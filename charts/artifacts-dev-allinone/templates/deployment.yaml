@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: artifacts-dev
+  namespace: artifacts-dev
+  labels:
+    {{- include "allinone.labels" . | nindent 4 }}
+spec:
+  replicas: 1                      # one process owns the disk stores; never scale this chart
+  strategy:
+    type: Recreate                 # the PVC is ReadWriteOnce
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: artifacts-dev-allinone
+  template:
+    metadata:
+      labels:
+        {{- include "allinone.labels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false     # D12: nothing here calls the Kubernetes API
+      securityContext:
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: artifacts-dev-data
+        - name: tmp-platform
+          emptyDir: {}
+        - name: tmp-gateway
+          emptyDir: {}
+        - name: tmp-shell
+          emptyDir: {}
+      containers:
+        # intake API + scanner worker + GC in one process, on disk-backed stores (BACKEND=disk).
+        - name: platform
+          image: {{ .Values.images.platform | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["node", "dist/intake-api/src/dev.js"]
+          securityContext:
+            {{- include "allinone.restricted" . | nindent 12 }}
+          env:
+            - { name: DEV_AUTH, value: "1" }                  # DEV ONLY: trusts X-Publisher-* headers
+            - { name: BACKEND, value: disk }
+            - { name: DATA_ROOT, value: /data }
+            - { name: SERVE_ROOT, value: /serving }
+            - { name: PORT, value: "8080" }
+            - { name: HOME, value: /tmp }
+            - { name: PUBLIC_BASE_URL, value: {{ .Values.publicBaseUrl | quote }} }
+            - { name: SHELL_ORIGIN, value: {{ printf "http://%s" .Values.hosts.shell | quote }} }
+            - { name: PIPELINE_TRIGGER, value: manual }     # nothing deploys by itself; see dev approval page
+            - { name: APPROVAL_MODE, value: {{ .Values.approvalMode | quote }} }
+            - { name: APPROVER_GROUP, value: {{ .Values.approverGroup | quote }} }
+            - { name: NPM_REGISTRY_HOST, value: {{ .Values.npmRegistryHost | quote }} }
+            - name: PIPELINE_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: PIPELINE_TOKEN } }
+            - name: INTERNAL_SHARED_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: INTERNAL_SHARED_KEY } }
+            - name: VIEW_TOKEN_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: VIEW_TOKEN_KEY } }
+          ports:
+            - { name: intake, containerPort: 8080 }
+          volumeMounts:
+            - { name: data, mountPath: /data, subPath: data }
+            - { name: data, mountPath: /serving, subPath: serving }
+            - { name: tmp-platform, mountPath: /tmp }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.platform | nindent 12 }}
+        - name: static-gateway
+          image: {{ .Values.images.staticGateway | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            {{- include "allinone.restricted" . | nindent 12 }}
+          env:
+            - { name: PORT, value: "8081" }
+            - { name: SERVE_ROOT, value: /serving }
+            - { name: ARTIFACT_DOMAIN, value: {{ .Values.hosts.artifactDomain | quote }} }
+            - { name: SHELL_ORIGIN, value: {{ printf "http://%s" .Values.hosts.shell | quote }} }
+            - { name: DEV_INSECURE_COOKIES, value: "1" }     # DEV ONLY: HTTP, so no Secure cookies
+            - name: VIEW_TOKEN_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: VIEW_TOKEN_KEY } }
+          ports:
+            - { name: gateway, containerPort: 8081 }
+          volumeMounts:
+            - { name: data, mountPath: /serving, subPath: serving, readOnly: true }
+            - { name: tmp-gateway, mountPath: /tmp }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8081 }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.sidecar | nindent 12 }}
+        - name: viewer-shell
+          image: {{ .Values.images.viewerShell | quote }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            {{- include "allinone.restricted" . | nindent 12 }}
+          env:
+            - { name: PORT, value: "8082" }
+            - { name: DEV_AUTH, value: "1" }                  # DEV ONLY: every viewer is dev-viewer, no Entra
+            - { name: DEV_INSECURE_COOKIES, value: "1" }
+            - { name: SHELL_ORIGIN, value: {{ printf "http://%s" .Values.hosts.shell | quote }} }
+            - { name: ARTIFACT_DOMAIN, value: {{ .Values.hosts.artifactDomain | quote }} }
+            - { name: ARTIFACT_SCHEME, value: http }
+            - { name: INTAKE_INTERNAL_URL, value: "http://127.0.0.1:8080" }
+            - name: INTERNAL_SHARED_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.existingSecret }}, key: INTERNAL_SHARED_KEY } }
+          ports:
+            - { name: shell, containerPort: 8082 }
+          volumeMounts:
+            - { name: tmp-shell, mountPath: /tmp }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8082 }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources.sidecar | nindent 12 }}

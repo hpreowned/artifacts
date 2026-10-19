@@ -25,13 +25,15 @@ export interface LocalStack {
   stop(): Promise<void>;
 }
 
+// Binds all interfaces unless HOST says otherwise: scripts/dev-env.sh sets HOST=127.0.0.1 so a laptop stays
+// loopback-only, while in a pod the readiness probe and the Service arrive over the pod network.
 export async function startLocalStack(cfg: Config, port: number = cfg.port): Promise<LocalStack> {
   if (cfg.backend !== "memory" && cfg.backend !== "disk") throw new Error("the local stack runs on BACKEND=memory or BACKEND=disk only");
   if (!cfg.pipelineToken) throw new Error("the local stack needs PIPELINE_TOKEN so the fake pipeline can call /events");
   const stores = createStores(cfg);
   const entraVerifier = cfg.devAuth ? undefined : createEntraTokenVerifier({ tenantId: cfg.entraTenantId!, audience: cfg.entraAudience!, requiredScope: cfg.entraRequiredScope });
   const server = createApp({ cfg, stores, now: () => new Date(), entraVerifier });
-  await new Promise<void>((resolve, reject) => server.listen(port, "127.0.0.1").once("listening", resolve).once("error", reject));
+  await new Promise<void>((resolve, reject) => server.listen(port, process.env.HOST ?? "0.0.0.0").once("listening", resolve).once("error", reject));
   const bound = (server.address() as AddressInfo).port;
   const baseUrl = `http://localhost:${bound}`;
   const defender = new FakeDefenderReader(cfg.worker.defenderFakeMalicious);

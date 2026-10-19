@@ -79,6 +79,13 @@ if [ -x "$root/charts/tests/node-conformance.sh" ]; then
   fi
 fi
 
+if [ -x "$root/charts/tests/allinone-conformance.sh" ]; then
+  if "$root/charts/tests/allinone-conformance.sh"; then
+    echo "conformance ok  charts/artifacts-dev-allinone"
+  else
+    echo "conformance FAIL  charts/artifacts-dev-allinone"; fail=1
+  fi
+fi
 if [ -x "$root/charts/tests/artifact-conformance.sh" ]; then
   if "$root/charts/tests/artifact-conformance.sh"; then
     echo "conformance ok  charts/artifact-python"

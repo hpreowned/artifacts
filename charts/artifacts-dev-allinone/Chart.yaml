@@ -1,0 +1,6 @@
+apiVersion: v2
+name: artifacts-dev-allinone
+description: DEV-CLUSTER DEMO ONLY. The whole publish path in one pod (intake + scanner in one process on disk-backed stores, static gateway, viewer shell) with no Azure dependencies, attached to an existing Gateway API gateway over HTTP. Not the platform chart; see charts/artifacts-platform for the real thing.
+type: application
+version: 0.1.0
+appVersion: "dev"

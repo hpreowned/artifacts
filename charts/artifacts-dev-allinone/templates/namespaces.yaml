@@ -1,0 +1,44 @@
+{{- include "allinone.validate" . -}}
+# The platform pod's namespace. Not in the mesh: the ingress gateway reaches it over plain HTTP.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: artifacts-dev
+  labels:
+    {{- include "allinone.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+# Where the artifact charts deploy (charts/artifact-node and artifact-python hardcode this name). Same
+# posture as the platform chart's: restricted, default-deny, only the gateway may reach pods, no egress.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: artifacts-dynamic
+  labels:
+    {{- include "allinone.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: artifacts-dynamic
+  labels:
+    {{- include "allinone.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.gateway.namespace }}
+          podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: {{ .Values.gateway.name }}
+      ports:
+        - port: 8080
+          protocol: TCP
+  # no egress rules: artifact pods reach nothing, not even DNS

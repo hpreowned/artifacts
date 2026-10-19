@@ -1,0 +1,8 @@
+*** DEV-CLUSTER DEMO ONLY ***  DEV_AUTH=1, HTTP, disk-backed stores, nothing deploys by itself.
+This is not the platform chart. Remove it before charts/artifacts-platform is installed (both own artifacts-dynamic).
+
+Shell:       http://{{ .Values.hosts.shell }}/view/<artifactId>
+Artifacts:   http://<artifactId>.{{ .Values.hosts.artifactDomain }}/   (only inside the shell's frame)
+Intake:      {{ if .Values.hosts.intake }}http://{{ .Values.hosts.intake }}{{ else }}kubectl -n artifacts-dev port-forward svc/artifacts-dev-intake 8080:8080{{ end }}
+Pipeline:    PIPELINE_TRIGGER=manual — after a python/node job is scanned, run scripts/play-node-pipeline.sh <jobId>
+Approval:    {{ .Values.publicBaseUrl }}/dev/approval/<jobId>

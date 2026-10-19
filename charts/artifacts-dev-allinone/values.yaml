@@ -1,0 +1,45 @@
+# DEV-CLUSTER DEMO ONLY (docs/DEV-AKS-DEMO.md). Everything here that would be wrong in production is marked.
+# What this chart proves: the real images, the real sandboxing (gateway + shell + per-artifact origins), the
+# real artifact charts under the real namespace policies, on a real cluster — with no new Azure resources.
+# What it defers: Blob/Service Bus/Key Vault (disk + in-process instead), Entra (DEV_AUTH=1), TLS (HTTP).
+
+images:
+  # The scanner image runs the combined intake+scanner process (it carries Python, gitleaks and the intake code).
+  platform: ""        # e.g. myacr.azurecr.io/artifacts/scanner:dev1
+  staticGateway: ""   # e.g. myacr.azurecr.io/artifacts/static-gateway:dev1
+  viewerShell: ""     # e.g. myacr.azurecr.io/artifacts/viewer-shell:dev1
+  pullPolicy: IfNotPresent
+
+hosts:
+  # Two different registrable domains, so the shell and the artifacts are cross-site like production.
+  shell: ""             # e.g. shell.10-142-65-220.nip.io
+  artifactDomain: ""    # e.g. a.10-142-65-220.sslip.io  (artifacts live at <id>.<artifactDomain>)
+  intake: ""            # optional: expose intake on this host too; empty = reach it with kubectl port-forward
+
+# The existing Gateway API gateway the routes attach to (kubectl get gateway -A).
+gateway:
+  name: ingress-gateway
+  namespace: istio-ingress
+  sectionName: ""       # a listener name; empty attaches to whichever listener accepts the hostname
+
+# Created out of band (kubectl create secret generic ...): PIPELINE_TOKEN, INTERNAL_SHARED_KEY, VIEW_TOKEN_KEY.
+existingSecret: artifacts-dev-secrets
+
+storage:
+  size: 5Gi
+  storageClassName: ""  # empty = the cluster default
+
+# What the laptop uses to reach intake (port-forward by default). Appears in uploadUrl and the dev approval link.
+publicBaseUrl: http://localhost:8080
+
+approvalMode: policy                       # D16: policy | always-human | always-auto
+npmRegistryHost: "registry.npmjs.org"      # laptop lockfiles; add the JFrog host when bundles are built against it
+approverGroup: artifacts-approvers
+
+resources:
+  platform:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+  sidecar:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 300m, memory: 256Mi }

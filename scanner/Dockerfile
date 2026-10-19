@@ -33,7 +33,11 @@
 # under /usr/local, instead of installing Python on top of Node.
 
 # ---- TypeScript build: scanner/ plus the intake-api/ sources it imports types and stores from ----
-FROM jfrog.corp.com/docker/node:20-slim AS build
+# Build arguments exist so the platform team can build this file on a laptop that cannot reach JFrog
+# (scripts/build-platform-images.sh). The pipeline passes none: production is the defaults below.
+ARG NODE_IMAGE=jfrog.corp.com/docker/node:20-slim
+ARG PYTHON_IMAGE=jfrog.corp.com/docker/python:3.12-slim
+FROM ${NODE_IMAGE} AS build
 WORKDIR /repo
 COPY scanner/package.json scanner/package-lock.json scanner/tsconfig.json scanner/
 COPY intake-api/package.json intake-api/package-lock.json intake-api/tsconfig.json intake-api/
@@ -45,24 +49,26 @@ COPY intake-api/src intake-api/src
 RUN cd scanner && npm run build && npm prune --omit=dev
 
 # ---- gitleaks: fetched once and checksummed, never built from a moving tag ----
-FROM jfrog.corp.com/docker/node:20-slim AS gitleaks
+FROM ${NODE_IMAGE} AS gitleaks
 ARG GITLEAKS_VERSION
 ARG GITLEAKS_SHA256
+# Where the checksummed tarball comes from; the laptop build points this at the GitHub release.
+ARG GITLEAKS_URL=https://jfrog.corp.com/artifactory/generic-remote/gitleaks/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
 RUN [ -n "$GITLEAKS_VERSION" ] || { echo "GITLEAKS_VERSION build arg is required" >&2; exit 1; }
 RUN [ -n "$GITLEAKS_SHA256" ] || { echo "GITLEAKS_SHA256 build arg is required" >&2; exit 1; }
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates tar \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /tmp/gitleaks
-RUN curl -fsSLO "https://jfrog.corp.com/artifactory/generic-remote/gitleaks/${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+RUN curl -fsSL -o "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" "$GITLEAKS_URL" \
  && echo "${GITLEAKS_SHA256}  gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | sha256sum -c - \
  && tar -xzf "gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" gitleaks \
  && chmod 0755 gitleaks
 
 # ---- Python 3.12, for its interpreter and stdlib only (see the note above) ----
-FROM jfrog.corp.com/docker/python:3.12-slim AS python
+FROM ${PYTHON_IMAGE} AS python
 
 # ---- runtime ----
-FROM jfrog.corp.com/docker/node:20-slim
+FROM ${NODE_IMAGE}
 ENV NODE_ENV=production \
     REPO_ROOT=/app \
     GITLEAKS_BIN=/usr/local/bin/gitleaks \

@@ -1,0 +1,54 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: artifacts-dev-shell
+  namespace: artifacts-dev
+  labels:
+    {{- include "allinone.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- include "allinone.parentRef" . | nindent 4 }}
+  hostnames:
+    - {{ .Values.hosts.shell | quote }}
+  rules:
+    - backendRefs:
+        - name: artifacts-dev-shell
+          port: 8082
+---
+# One origin per artifact: <id>.<artifactDomain>. The gateway container serves and sandboxes them.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: artifacts-dev-artifacts
+  namespace: artifacts-dev
+  labels:
+    {{- include "allinone.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- include "allinone.parentRef" . | nindent 4 }}
+  hostnames:
+    - {{ printf "*.%s" .Values.hosts.artifactDomain | quote }}
+  rules:
+    - backendRefs:
+        - name: artifacts-dev-gateway
+          port: 8081
+{{- if .Values.hosts.intake }}
+---
+# Optional: intake reachable by hostname (otherwise kubectl port-forward svc/artifacts-dev-intake 8080).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: artifacts-dev-intake
+  namespace: artifacts-dev
+  labels:
+    {{- include "allinone.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- include "allinone.parentRef" . | nindent 4 }}
+  hostnames:
+    - {{ .Values.hosts.intake | quote }}
+  rules:
+    - backendRefs:
+        - name: artifacts-dev-intake
+          port: 8080
+{{- end }}

@@ -1,0 +1,17 @@
+{{- range $svc := list (dict "name" "intake" "port" 8080) (dict "name" "gateway" "port" 8081) (dict "name" "shell" "port" 8082) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: artifacts-dev-{{ $svc.name }}
+  namespace: artifacts-dev
+  labels:
+    {{- include "allinone.labels" $ | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: artifacts-dev-allinone
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+{{- end }}
